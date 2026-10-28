@@ -1,0 +1,24 @@
+[Unit]
+Description=span shared data
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@/keeper
+Environment="PATH=@PATH@"
+Environment=NO_DNA=1
+Environment=SPAN_CLUSTER=@CLUSTER@
+Environment="TAPE_DATA_DIR=@DATA@"
+Environment="KEEPER_DATA_DIR=@KEEPER_DATA@"
+Environment=KEEPER_CREATE_BUDGET_LAMPORTS=50000000
+Environment=TAPE_HOST=127.0.0.1
+Environment=TAPE_PORT=8789
+ExecStart=@NPM@ run tape
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

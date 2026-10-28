@@ -1,0 +1,51 @@
+name: verifiable-build
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      NO_DNA: '1'
+    steps:
+      - uses: actions/checkout@v5.0.0
+      - name: Reject unfilled metadata
+        run: '! grep -R -E "__SP""AN_(URL|CONTACTS|REPO)__" program/programs program/client README.md SECURITY.md'
+      - name: Install verifier
+        run: cargo install solana-verify --version 0.5.2 --locked
+      - name: Build
+        working-directory: program
+        run: solana-verify build --library-name span
+      - name: Hash artifact
+        working-directory: program
+        run: |
+          solana-verify get-executable-hash target/deploy/span.so | tee ../span.executable-hash
+          cp target/deploy/span.so ../span.so
+          cd ..
+          sha256sum span.so | tee span.so.sha256
+      - name: Build development test binary
+        working-directory: program
+        run: |
+          mkdir -p target/devnet
+          solana-verify build --library-name span -- --features devnet
+          cp target/deploy/span.so target/devnet/span.so
+          cp ../span.so target/deploy/span.so
+      - uses: actions/setup-node@v5.0.0
+        with:
+          node-version: '26.11.1'
+      - name: Test
+        run: |
+          sudo chown -R "$USER:$USER" program/target
+          npm --prefix program ci
+          npm --prefix program run typecheck
+          npm --prefix program test
+          npm --prefix keeper ci
+          npm --prefix keeper run typecheck
+          npm --prefix keeper test
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: span-verifiable
+          path: |
+            span.so
+            span.so.sha256
+            span.executable-hash

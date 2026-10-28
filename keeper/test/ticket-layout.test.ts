@@ -1,0 +1,4 @@
+import{it,expect}from'vitest';import{Harness,accountData,PROGRAM}from'../../program/tests/harness.js';import{Chain}from'../src/keeper/chain.js';
+it('ingests the complete length-bearing Ticket and rejects the earlier truncated layout',async()=>{
+ const h=await Harness.create(),t=await h.open({strikeBps:200,premium:3000000n}),chain=new Chain({}as any,{}as any,()=>{}),data=Buffer.from(accountData(h.svm,t.ticket));expect(data.length).toBe(173);const raw=(d:Buffer)=>({owner:PROGRAM,lamports:2000000,data:[d.toString('base64'),'base64']});chain.ingest('ticket',t.ticket,raw(data),1);expect(chain.tickets.get(t.ticket)?.value.strikeBps).toBe(200);const other=await h.ref(t.t0,999n);chain.ingest('ticket',other.ticket,raw(data.subarray(0,171)),2);expect(chain.tickets.has(other.ticket)).toBe(false);
+});

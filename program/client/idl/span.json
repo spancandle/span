@@ -1,0 +1,2277 @@
+{
+  "address": "ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd",
+  "metadata": {
+    "name": "span",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "buy",
+      "discriminator": [
+        102,
+        6,
+        61,
+        18,
+        1,
+        218,
+        235,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "signer": true
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer_source",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init",
+      "discriminator": [
+        220,
+        59,
+        207,
+        236,
+        108,
+        250,
+        47,
+        100
+      ],
+      "accounts": [
+        {
+          "name": "guard",
+          "accounts": [
+            {
+              "name": "authority",
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "deployment",
+              "address": "ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd"
+            },
+            {
+              "name": "program_data"
+            }
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "admin",
+          "type": "pubkey"
+        },
+        {
+          "name": "read_window",
+          "type": "u16"
+        },
+        {
+          "name": "age_limit",
+          "type": "u16"
+        },
+        {
+          "name": "buy_cutoff",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "load_span",
+      "discriminator": [
+        47,
+        117,
+        113,
+        69,
+        164,
+        161,
+        238,
+        155
+      ],
+      "accounts": [
+        {
+          "name": "gate",
+          "accounts": [
+            {
+              "name": "buyer",
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "config",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "candle",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      97,
+                      110,
+                      100,
+                      108,
+                      101
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "candle.t0",
+                    "account": "Candle"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "ticket",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      116,
+                      105,
+                      99,
+                      107,
+                      101,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "ticket.id",
+                    "account": "Ticket"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "span_hold",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "gate.ticket",
+                "account": "LoadGate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "span_mint"
+        },
+        {
+          "name": "span_source",
+          "writable": true
+        },
+        {
+          "name": "span_token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "step_bps",
+          "type": "u16"
+        },
+        {
+          "name": "marker",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "mark",
+      "discriminator": [
+        203,
+        149,
+        171,
+        234,
+        35,
+        230,
+        238,
+        184
+      ],
+      "accounts": [
+        {
+          "name": "gate",
+          "accounts": [
+            {
+              "name": "marker",
+              "signer": true
+            },
+            {
+              "name": "config",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "candle",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      97,
+                      110,
+                      100,
+                      108,
+                      101
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "candle.t0",
+                    "account": "Candle"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "ticket",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      116,
+                      105,
+                      99,
+                      107,
+                      101,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "ticket.id",
+                    "account": "Ticket"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "span_mint",
+          "writable": true
+        },
+        {
+          "name": "span_hold",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "gate.ticket",
+                "account": "MarkGate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "span_token_program"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "open_candle",
+      "discriminator": [
+        198,
+        243,
+        1,
+        109,
+        157,
+        243,
+        101,
+        168
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "candle",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "t0"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "t0",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "open_ticket",
+      "discriminator": [
+        154,
+        120,
+        166,
+        69,
+        155,
+        111,
+        27,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "gate",
+          "accounts": [
+            {
+              "name": "config",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "candle",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      97,
+                      110,
+                      100,
+                      108,
+                      101
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "candle.t0",
+                    "account": "Candle"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_source",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "id",
+          "type": "u64"
+        },
+        {
+          "name": "premium",
+          "type": "u64"
+        },
+        {
+          "name": "strike_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "read",
+      "discriminator": [
+        116,
+        184,
+        159,
+        206,
+        179,
+        224,
+        178,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "j",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "set_feed",
+      "discriminator": [
+        79,
+        150,
+        2,
+        207,
+        41,
+        104,
+        77,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "set_params",
+      "discriminator": [
+        27,
+        234,
+        178,
+        52,
+        147,
+        2,
+        187,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "read_window",
+          "type": "u16"
+        },
+        {
+          "name": "age_limit",
+          "type": "u16"
+        },
+        {
+          "name": "buy_cutoff",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "set_span",
+      "discriminator": [
+        103,
+        175,
+        111,
+        45,
+        186,
+        133,
+        192,
+        17
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "span_mint"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "burn_per_mark",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "settle",
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_usdc",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "buyer_usdc",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "span_mint",
+          "optional": true
+        },
+        {
+          "name": "span_hold",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "buyer_span",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "span_token_program",
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw",
+      "discriminator": [
+        183,
+        18,
+        70,
+        156,
+        148,
+        109,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_destination",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Candle",
+      "discriminator": [
+        9,
+        189,
+        208,
+        107,
+        44,
+        76,
+        96,
+        31
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Ticket",
+      "discriminator": [
+        41,
+        228,
+        24,
+        165,
+        78,
+        90,
+        235,
+        200
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "Bought",
+      "discriminator": [
+        193,
+        56,
+        215,
+        24,
+        156,
+        76,
+        42,
+        104
+      ]
+    },
+    {
+      "name": "CandleOpened",
+      "discriminator": [
+        112,
+        148,
+        96,
+        59,
+        73,
+        111,
+        3,
+        82
+      ]
+    },
+    {
+      "name": "FeedSet",
+      "discriminator": [
+        227,
+        151,
+        44,
+        58,
+        171,
+        159,
+        194,
+        12
+      ]
+    },
+    {
+      "name": "Initialized",
+      "discriminator": [
+        208,
+        213,
+        115,
+        98,
+        115,
+        82,
+        201,
+        209
+      ]
+    },
+    {
+      "name": "Marked",
+      "discriminator": [
+        19,
+        64,
+        116,
+        147,
+        208,
+        214,
+        180,
+        172
+      ]
+    },
+    {
+      "name": "ParamsSet",
+      "discriminator": [
+        57,
+        111,
+        33,
+        252,
+        120,
+        76,
+        98,
+        245
+      ]
+    },
+    {
+      "name": "Read",
+      "discriminator": [
+        102,
+        232,
+        198,
+        160,
+        113,
+        252,
+        160,
+        120
+      ]
+    },
+    {
+      "name": "Settled",
+      "discriminator": [
+        232,
+        210,
+        40,
+        17,
+        142,
+        124,
+        145,
+        238
+      ]
+    },
+    {
+      "name": "SpanLoaded",
+      "discriminator": [
+        90,
+        17,
+        48,
+        48,
+        17,
+        109,
+        103,
+        211
+      ]
+    },
+    {
+      "name": "SpanSet",
+      "discriminator": [
+        167,
+        197,
+        95,
+        82,
+        155,
+        49,
+        169,
+        71
+      ]
+    },
+    {
+      "name": "TicketOpened",
+      "discriminator": [
+        224,
+        38,
+        43,
+        125,
+        232,
+        170,
+        103,
+        203
+      ]
+    },
+    {
+      "name": "Withdrawn",
+      "discriminator": [
+        20,
+        89,
+        223,
+        198,
+        194,
+        124,
+        219,
+        13
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotUpgradeAuthority"
+    },
+    {
+      "code": 6001,
+      "name": "NotAdmin"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidValue"
+    },
+    {
+      "code": 6003,
+      "name": "UsdcMintInvalid"
+    },
+    {
+      "code": 6004,
+      "name": "FeedInvalid"
+    },
+    {
+      "code": 6005,
+      "name": "FeedAssetMismatch"
+    },
+    {
+      "code": 6006,
+      "name": "FeedNotConfig"
+    },
+    {
+      "code": 6007,
+      "name": "FeedStale"
+    },
+    {
+      "code": 6008,
+      "name": "SpanAlreadySet"
+    },
+    {
+      "code": 6009,
+      "name": "SpanNotSet"
+    },
+    {
+      "code": 6010,
+      "name": "UnsupportedTokenProgram"
+    },
+    {
+      "code": 6011,
+      "name": "TransferHookActive"
+    },
+    {
+      "code": 6012,
+      "name": "TransferFeeMint"
+    },
+    {
+      "code": 6013,
+      "name": "DefaultStateFrozen"
+    },
+    {
+      "code": 6014,
+      "name": "FreezeAuthorityMint"
+    },
+    {
+      "code": 6015,
+      "name": "PermanentDelegateMint"
+    },
+    {
+      "code": 6016,
+      "name": "PausableMint"
+    },
+    {
+      "code": 6017,
+      "name": "IdMismatch"
+    },
+    {
+      "code": 6018,
+      "name": "BuyClosed"
+    },
+    {
+      "code": 6019,
+      "name": "NotOpen"
+    },
+    {
+      "code": 6020,
+      "name": "NotSold"
+    },
+    {
+      "code": 6021,
+      "name": "NotSeller"
+    },
+    {
+      "code": 6022,
+      "name": "NotBuyer"
+    },
+    {
+      "code": 6023,
+      "name": "NotMarker"
+    },
+    {
+      "code": 6024,
+      "name": "NotLoaded"
+    },
+    {
+      "code": 6025,
+      "name": "AlreadyLoaded"
+    },
+    {
+      "code": 6026,
+      "name": "StepNotAllowed"
+    },
+    {
+      "code": 6027,
+      "name": "SpanShort"
+    },
+    {
+      "code": 6028,
+      "name": "DepositMismatch"
+    },
+    {
+      "code": 6029,
+      "name": "ReadFilled"
+    },
+    {
+      "code": 6030,
+      "name": "BeforeBoundary"
+    },
+    {
+      "code": 6031,
+      "name": "OutsideWindow"
+    },
+    {
+      "code": 6032,
+      "name": "NoOpen"
+    },
+    {
+      "code": 6033,
+      "name": "OutsideCandle"
+    },
+    {
+      "code": 6034,
+      "name": "NotExtension"
+    },
+    {
+      "code": 6035,
+      "name": "CapReached"
+    },
+    {
+      "code": 6036,
+      "name": "NotClosed"
+    },
+    {
+      "code": 6037,
+      "name": "MissingAccount"
+    },
+    {
+      "code": 6038,
+      "name": "WrongMint"
+    },
+    {
+      "code": 6039,
+      "name": "WrongOwner"
+    },
+    {
+      "code": 6040,
+      "name": "ReceiverMismatch"
+    },
+    {
+      "code": 6041,
+      "name": "Overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Bought",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "premium",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Candle",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "read_window",
+            "type": "u16"
+          },
+          {
+            "name": "age_limit",
+            "type": "u16"
+          },
+          {
+            "name": "buy_cutoff",
+            "type": "u16"
+          },
+          {
+            "name": "reads",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "PriceRead"
+                  }
+                },
+                13
+              ]
+            }
+          },
+          {
+            "name": "read_high",
+            "type": "u64"
+          },
+          {
+            "name": "read_low",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CandleOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "candle",
+            "type": "pubkey"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "read_window",
+            "type": "u16"
+          },
+          {
+            "name": "age_limit",
+            "type": "u16"
+          },
+          {
+            "name": "buy_cutoff",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "feed",
+            "type": "pubkey"
+          },
+          {
+            "name": "read_window",
+            "type": "u16"
+          },
+          {
+            "name": "age_limit",
+            "type": "u16"
+          },
+          {
+            "name": "buy_cutoff",
+            "type": "u16"
+          },
+          {
+            "name": "span_mint",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "span_token_program",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "burn_per_mark",
+            "type": "u64"
+          },
+          {
+            "name": "next_ticket_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeedSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old_feed",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_feed",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Initialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "feed",
+            "type": "pubkey"
+          },
+          {
+            "name": "read_window",
+            "type": "u16"
+          },
+          {
+            "name": "age_limit",
+            "type": "u16"
+          },
+          {
+            "name": "buy_cutoff",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Marked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "side",
+            "type": {
+              "defined": {
+                "name": "Side"
+              }
+            }
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "publish_ts",
+            "type": "i64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "tail_high",
+            "type": "u64"
+          },
+          {
+            "name": "tail_low",
+            "type": "u64"
+          },
+          {
+            "name": "marks",
+            "type": "u32"
+          },
+          {
+            "name": "burned",
+            "type": "u64"
+          },
+          {
+            "name": "burn",
+            "type": "u64"
+          },
+          {
+            "name": "span_left",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Outcome",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Paid"
+          },
+          {
+            "name": "Void"
+          },
+          {
+            "name": "Unsold"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ParamsSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "read_window",
+            "type": "u16"
+          },
+          {
+            "name": "age_limit",
+            "type": "u16"
+          },
+          {
+            "name": "buy_cutoff",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PriceRead",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "publish_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Read",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "candle",
+            "type": "pubkey"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "j",
+            "type": "u8"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "publish_ts",
+            "type": "i64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "read_high",
+            "type": "u64"
+          },
+          {
+            "name": "read_low",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Settled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "outcome",
+            "type": {
+              "defined": {
+                "name": "Outcome"
+              }
+            }
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "buyer",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "premium",
+            "type": "u64"
+          },
+          {
+            "name": "strike_bps",
+            "type": "u16"
+          },
+          {
+            "name": "p0",
+            "type": "u64"
+          },
+          {
+            "name": "read_high",
+            "type": "u64"
+          },
+          {
+            "name": "read_low",
+            "type": "u64"
+          },
+          {
+            "name": "tail_high",
+            "type": "u64"
+          },
+          {
+            "name": "tail_low",
+            "type": "u64"
+          },
+          {
+            "name": "high",
+            "type": "u64"
+          },
+          {
+            "name": "low",
+            "type": "u64"
+          },
+          {
+            "name": "payout",
+            "type": "u64"
+          },
+          {
+            "name": "to_buyer",
+            "type": "u64"
+          },
+          {
+            "name": "to_seller",
+            "type": "u64"
+          },
+          {
+            "name": "span_returned",
+            "type": "u64"
+          },
+          {
+            "name": "burned",
+            "type": "u64"
+          },
+          {
+            "name": "marks",
+            "type": "u32"
+          },
+          {
+            "name": "reads",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Side",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "High"
+          },
+          {
+            "name": "Low"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpanLoaded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "step_bps",
+            "type": "u16"
+          },
+          {
+            "name": "marker",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SpanSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "span_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "span_token_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "burn_per_mark",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Ticket",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "buyer",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "premium",
+            "type": "u64"
+          },
+          {
+            "name": "strike_bps",
+            "type": "u16"
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "TicketState"
+              }
+            }
+          },
+          {
+            "name": "span_loaded",
+            "type": "u64"
+          },
+          {
+            "name": "step_bps",
+            "type": "u16"
+          },
+          {
+            "name": "marker",
+            "type": "pubkey"
+          },
+          {
+            "name": "tail_high",
+            "type": "u64"
+          },
+          {
+            "name": "tail_low",
+            "type": "u64"
+          },
+          {
+            "name": "marks",
+            "type": "u32"
+          },
+          {
+            "name": "burned",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "span_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "premium",
+            "type": "u64"
+          },
+          {
+            "name": "strike_bps",
+            "type": "u16"
+          },
+          {
+            "name": "deposit",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Sold"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Withdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "returned",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}
