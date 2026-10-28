@@ -26,8 +26,10 @@ jobs:
       - name: Build development test binary
         working-directory: program
         run: |
+          sudo chown -R "$USER:$USER" target
           mkdir -p target/devnet
           solana-verify build --library-name span -- --features devnet
+          sudo chown -R "$USER:$USER" target
           cp target/deploy/span.so target/devnet/span.so
           cp ../span.so target/deploy/span.so
       - uses: actions/setup-node@v5.0.0
