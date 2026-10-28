@@ -30,8 +30,10 @@ jobs:
           mkdir -p target/devnet
           solana-verify build --library-name span -- --features devnet
           sudo chown -R "$USER:$USER" target
+          mkdir -p target/mainnet target/checks
           cp target/deploy/span.so target/devnet/span.so
           cp ../span.so target/deploy/span.so
+          cp ../span.so target/mainnet/span.so
       - uses: actions/setup-node@v5.0.0
         with:
           node-version: '26.11.1'
