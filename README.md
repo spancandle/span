@@ -4,6 +4,14 @@
 
 <h3 align="center">SOL's release-hour candle, settled by its length. Wicks included.</h3>
 
+<p align="center">
+  <a href="https://span.press">span.press</a> ·
+  <a href="https://span.press/#docs">Docs</a> ·
+  <a href="https://span.press/#book">Book</a> ·
+  <a href="https://x.com/spancandle">X</a> ·
+  <a href="#build-and-verify">Verify the bytes</a>
+</p>
+
 A US release moves SOL in the hour after the print, and the move can come back before the hour is out. A perp settles that hour on its body, open to close. span settles it on the candle, from the top of the upper wick to the bottom of the lower one.
 
 A candle is 60 minutes and starts on a minute. The site lists one for every scheduled CPI, PPI and jobs print (08:30 ET) and FOMC decision (14:00 ET), starting one minute before it. A seller opens a ticket with a length, 0 to 5% in 0.25% steps, and puts 40 USDC less the premium into its vault. A buyer pays the premium, 0.10 to 39 USDC. At the close the buyer receives 10 USDC for every 1% of candle past the length, up to the 40 USDC in the vault, and the seller receives the rest. Which way the hour went and where it closed do not enter the payout.
