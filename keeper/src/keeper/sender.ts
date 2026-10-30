@@ -19,7 +19,7 @@ import { log, type Logger } from "../common/log.js";
 import type { FeedValue } from "../common/feed.js";
 export type Action = {
   key: string;
-  kind: "read" | "mark" | "settle";
+  kind: "open" | "read" | "mark" | "settle";
   t0: bigint;
   j?: number;
   ticket?: string;
@@ -67,7 +67,9 @@ export async function prepareTransaction(
   rent = 0n,
 ): Promise<Prepared> {
   const limit =
-    action.kind === "read"
+    action.kind === "open"
+      ? 40000
+      : action.kind === "read"
       ? 40000
       : action.kind === "mark"
         ? 60000

@@ -14,6 +14,7 @@ Environment="TAPE_DATA_DIR=@DATA@"
 Environment="KEEPER_DATA_DIR=@KEEPER_DATA@"
 Environment=KEEPER_CREATE_BUDGET_LAMPORTS=50000000
 Environment=KEEPER_ALLOW_MAINNET=1
+Environment=KEEPER_RELEASE_HOURS=1
 Environment="SPAN_WS_URL=@WS@"
 ExecStart=@NPM@ run keeper
 Restart=always

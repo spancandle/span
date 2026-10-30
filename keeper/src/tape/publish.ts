@@ -1,4 +1,4 @@
-import { SPAN_PROGRAM_ADDRESS } from "../../../program/client/index.js";
+import { SPAN_PROGRAM_ADDRESS, settleAfter } from "../../../program/client/index.js";
 import type { Store } from "../common/sqlite.js";
 import type { Chain } from "../keeper/chain.js";
 import type { History } from "./history.js";
@@ -11,6 +11,7 @@ import { liveDocuments, markLog, candleReads } from "./state.js";
 import { json } from "../common/env.js";
 import { log, safeError } from "../common/log.js";
 import { getCandleDecoder } from "../../../program/client/index.js";
+import { RELEASE_HOURS } from "../common/release-hours.js";
 export const delta = (xs: (string | number | bigint)[]) =>
   xs.map((x, i) => String(i ? BigInt(x) - BigInt(xs[i - 1]) : x)).join(",");
 const sha1 = (x: string) => createHash("sha1").update(x).digest("hex");
@@ -20,7 +21,8 @@ export class Publisher {
   private content = "";
   private historyAt = 0;
   private historyRevision = -1;
-  // Receipt candles of the last history.json, and per t0 the hash of the
+  private historyHours = "";
+  // Closed candles of the last history.json, and per t0 the hash of the
   // candle path body stored and of the bytes written by this process.
   private pathTs: string[] = [];
   private bodies = new Map<string, string>();
@@ -34,6 +36,7 @@ export class Publisher {
     readonly recorder: DovesRecorder,
     readonly dir: string,
     readonly spanDecimals: (mint: string) => number | null = () => null,
+    readonly releaseHours: readonly bigint[] = RELEASE_HOURS,
   ) {
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS candle_path(t0 TEXT PRIMARY KEY,raw TEXT NOT NULL)",
@@ -113,6 +116,12 @@ export class Publisher {
       }),
     };
   }
+  private closedReleaseHours() {
+    const hours = new Set(this.releaseHours), now = this.chain.now();
+    return [...this.chain.candles.values()]
+      .filter(({ value: c }) => hours.has(c.t0) && now >= settleAfter(c))
+      .map(({ value: c }) => String(c.t0)).sort();
+  }
   historyDocument() {
     const receipts = this.history
         .events("Settled")
@@ -120,7 +129,7 @@ export class Publisher {
         .slice(0, 500)
         .map((x) => ({ ...x, markLog: markLog(this.history, x.ticket) })),
       withdrawals = this.history.events("Withdrawn").reverse().slice(0, 500),
-      ts = [...new Set(receipts.map((x) => x.t0))]
+      ts = [...new Set([...receipts.map((x) => x.t0), ...this.closedReleaseHours()])]
         .sort((a, b) => (BigInt(a) > BigInt(b) ? -1 : 1))
         .slice(0, 200);
     this.pathTs = ts;
@@ -369,13 +378,15 @@ export class Publisher {
     }
     if (this.chain.config)
       atomicFile(this.dir, "feed.json", this.feedDocument());
+    const hours = this.closedReleaseHours().join(",");
     const all =
-      this.store.revision !== this.historyRevision &&
+      (this.store.revision !== this.historyRevision || hours !== this.historyHours) &&
       now - this.historyAt >= 2000;
     if (all) {
       atomicFile(this.dir, "history.json", this.historyDocument());
       this.historyAt = now;
       this.historyRevision = this.store.revision;
+      this.historyHours = hours;
     }
     this.candlePaths(all);
   }

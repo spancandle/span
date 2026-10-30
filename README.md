@@ -129,7 +129,7 @@ DOVES SOL account: `FYq2BWQ1V5P1WFBqr3qB2Kb5yHVvSv7upzKodgQE5zXh`, owned by `DoV
 
 ## Run a keeper
 
-Requires Node 26.11.1. Install dependencies in both packages with `npm --prefix program ci` and `npm --prefix keeper ci`. Set `SPAN_CLUSTER=mainnet`, `KEEPER_KEYPAIR` to a private wallet file outside version control, and `KEEPER_ALLOW_MAINNET=1`, then run `npm --prefix keeper run keeper`. Run `npm --prefix keeper run tape` separately. See [keeper configuration](keeper/README.md) and the service templates in `keeper/deploy`.
+Requires Node 26.11.1. Install dependencies in both packages with `npm --prefix program ci` and `npm --prefix keeper ci`. Set `SPAN_CLUSTER=mainnet`, `KEEPER_KEYPAIR` to a private wallet file outside version control, and `KEEPER_ALLOW_MAINNET=1`, then run `npm --prefix keeper run keeper`. Run `npm --prefix keeper run tape` separately. See [keeper configuration](keeper/README.md) and the service templates in `keeper/deploy`. Set `KEEPER_RELEASE_HOURS=1` to open and read every scheduled release hour, as the public keeper does.
 
 Anyone may submit scheduled readings or settle a ticket. Only the reader chosen for a ticket may submit its tail marks. Use a separate fee wallet per keeper process. The tape serves cached JSON files and accepts no browser RPC requests.
 

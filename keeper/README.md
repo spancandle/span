@@ -2,13 +2,13 @@
 
 Requires Node 26.11.1. Install with `npm ci`, then run `npm run typecheck` and `npm test`. The package imports the sibling `program/client`.
 
-Run `npm run keeper` to record reads, extend eligible ticket tails and settle every expired ticket. Run `npm run tape` separately to serve six JSON snapshots on `127.0.0.1:8789`. The tape does not use a signing key and an HTTP request never calls RPC.
+Run `npm run keeper` to record reads, extend eligible ticket tails and settle every expired ticket. Run `npm run tape` separately to serve six JSON snapshots on `127.0.0.1:8789`. The tape does not use a signing key and an HTTP request never calls RPC. With `KEEPER_RELEASE_HOURS=1` the keeper also opens the candle of every release hour in `src/common/release-hours.json` a day ahead and reads it without a ticket.
 
 Both processes load the repository root `.env` when present. `SPAN_CLUSTER` defaults to `devnet`. Public cluster RPC is always first. Optional devnet endpoints use `DEVNET_RPC_URL_FALLBACK`, `DEVNET_RPC_URL_FALLBACK_2` and their `DEVNET_RPC_WS_URL_FALLBACK` equivalents. Mainnet read endpoints use the names without `DEVNET_`. `SPAN_WS_URL` overrides only the public WebSocket. Endpoint URLs are never logged.
 
 `KEEPER_KEYPAIR` defaults to `keys/<cluster>-keeper.json` relative to the repository root. Keep key files private and outside version control. Use a dedicated fee wallet. **Do not run two keeper processes with the same key.** Different fee wallets can operate independently. Sending to mainnet is disabled unless `KEEPER_ALLOW_MAINNET=1`; deployment and mainnet operation require separate operator setup.
 
-Priority fees use the positive 75th percentile, clamped by `KEEPER_PRIORITY_FEE_MIN` and `KEEPER_PRIORITY_FEE_MAX` (default 10,000 and 1,000,000 microlamports/CU). `KEEPER_CREATE_BUDGET_LAMPORTS` defaults to 50,000,000 per trailing 24 hours. When the recipient needs an account and the budget is exhausted or its finalized history is incomplete, settlement waits. Settlements requiring no account creation continue.
+Priority fees use the positive 75th percentile, clamped by `KEEPER_PRIORITY_FEE_MIN` and `KEEPER_PRIORITY_FEE_MAX` (default 10,000 and 1,000,000 microlamports/CU). `KEEPER_CREATE_BUDGET_LAMPORTS` defaults to 50,000,000 per trailing 24 hours. When the recipient needs an account and the budget is exhausted or its finalized history is incomplete, settlement waits. Settlements requiring no account creation continue. Release-hour candles count against the same budget.
 
 `KEEPER_DATA_DIR` defaults to `keeper/data`. Give each fee wallet its own data directory, including when running different keys concurrently. A single blockhash expiration height is stored durably there before signing. After a restart, reads and marks start immediately. Account-creating settlements wait for finalized history beyond the previous height; if the height file is missing they wait ten minutes before reconstruction. Pending creation costs remain reserved until a complete finalized recount proves their result or expiration.
 

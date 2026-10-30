@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { address, unwrapOption, type Address } from "@solana/kit";
+import { address, unwrapOption, type Address, type TransactionSigner } from "@solana/kit";
 import * as s from "../../../program/client/index.js";
 import { cluster, ROOT, json, feeBounds } from "../common/env.js";
 import { log, safeError } from "../common/log.js";
@@ -11,47 +11,33 @@ import { PriorityFees } from "./priority.js";
 import { prepareTransaction, Sender, type Action } from "./sender.js";
 import { Engine } from "./engine.js";
 import { Overlay } from "./overlay.js";
+import { RELEASE_HOURS } from "../common/release-hours.js";
 import { keeperTelemetry } from "../common/telemetry.js";
-export async function runKeeper() {
-  const c = cluster();
-  if (c === "mainnet" && process.env.KEEPER_ALLOW_MAINNET !== "1")
-    throw Error("Mainnet keeper is disabled");
-  const payer = await signerFile(
-    resolve(ROOT, process.env.KEEPER_KEYPAIR || `keys/${c}-keeper.json`),
-  );
-  const rpc = new RpcPool(c);
-  await rpc.initialize();
-  const ws = new Subscriptions(rpc),
-    chain = new Chain(rpc, ws);
-  await chain.init();
-  const record = new HeightRecord(
-    resolve(
-      ROOT,
-      process.env.KEEPER_DATA_DIR || "keeper/data",
-      `${c}-keeper.json`,
-    ),
-  );
-  const budget = new CreationBudget(
-    rpc,
-    payer.address,
-    BigInt(process.env.KEEPER_CREATE_BUDGET_LAMPORTS || 50000000),
-    record.loaded,
-  );
-  const bounds = feeBounds();
-  const priorities = new PriorityFees(rpc, bounds.min, bounds.max);
-  let latest: { blockhash: any; lastValidBlockHeight: bigint } | undefined;
-  const sender = new Sender(
-    rpc,
-    ws,
-    () => chain.slot,
-    () => chain.height,
-    () => chain.now(),
-  );
+/** The same preparation path is used by the running keeper and read-only simulations. */
+export async function createPrepare(
+  rpc: RpcPool,
+  payer: TransactionSigner,
+  chain: Chain,
+  priorities: Pick<PriorityFees, "register">,
+  latest: () => { blockhash: any; lastValidBlockHeight: bigint } | undefined,
+) {
   const eventAuthority = (await s.findEventAuthorityPda())[0],
     config = chain.configKey;
-  const prepare = async (a: Action, fee: bigint) => {
-    if (!latest || !chain.config) throw Error("Preparation unavailable");
-    const hash = latest;
+  let candleRent: Promise<bigint> | undefined;
+  return async (a: Action, fee: bigint) => {
+    const hash = latest();
+    if (!hash || !chain.config) throw Error("Preparation unavailable");
+    if (a.kind === "open") {
+      const candle = (await s.findCandlePda(a.t0))[0];
+      const ix = s.getOpenCandleInstruction({ config, payer, candle,
+        systemProgram: address("11111111111111111111111111111111"),
+        eventAuthority, program: s.SPAN_PROGRAM_ADDRESS, t0: a.t0 });
+      candleRent ??= rpc.call("getMinimumBalanceForRentExemption", [247])
+        .then((v) => BigInt(v)).catch((e) => { candleRent = undefined; throw e; });
+      const rent = await candleRent;
+      priorities.register(a.key, [ix], payer.address);
+      return prepareTransaction([ix], payer, hash, a, fee, rent);
+    }
     const candle = [...chain.candles].find((x) => x[1].value.t0 === a.t0)![0];
     if (a.kind === "settle") {
       const t = chain.tickets.get(address(a.ticket!));
@@ -88,6 +74,43 @@ export async function runKeeper() {
     priorities.register(a.key, [ix], payer.address);
     return prepareTransaction([ix], payer, hash, a, fee);
   };
+}
+export async function runKeeper() {
+  const c = cluster();
+  if (c === "mainnet" && process.env.KEEPER_ALLOW_MAINNET !== "1")
+    throw Error("Mainnet keeper is disabled");
+  const payer = await signerFile(
+    resolve(ROOT, process.env.KEEPER_KEYPAIR || `keys/${c}-keeper.json`),
+  );
+  const rpc = new RpcPool(c);
+  await rpc.initialize();
+  const ws = new Subscriptions(rpc),
+    chain = new Chain(rpc, ws);
+  await chain.init();
+  const record = new HeightRecord(
+    resolve(
+      ROOT,
+      process.env.KEEPER_DATA_DIR || "keeper/data",
+      `${c}-keeper.json`,
+    ),
+  );
+  const budget = new CreationBudget(
+    rpc,
+    payer.address,
+    BigInt(process.env.KEEPER_CREATE_BUDGET_LAMPORTS || 50000000),
+    record.loaded,
+  );
+  const bounds = feeBounds();
+  const priorities = new PriorityFees(rpc, bounds.min, bounds.max);
+  let latest: { blockhash: any; lastValidBlockHeight: bigint } | undefined;
+  const sender = new Sender(
+    rpc,
+    ws,
+    () => chain.slot,
+    () => chain.height,
+    () => chain.now(),
+  );
+  const prepare = await createPrepare(rpc, payer, chain, priorities, () => latest);
   const engine = new Engine(
     chain,
     payer.address,
@@ -99,6 +122,8 @@ export async function runKeeper() {
       cancel: (key) => sender.cancel(key),
     },
     budget,
+    log,
+    process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : [],
   );
   sender.done = (p, e, stage) => {
     engine.result(p, e, stage);

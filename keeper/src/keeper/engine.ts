@@ -33,6 +33,8 @@ export class Engine {
   private marks = new Map<string, number>();
   private reads = new Set<string>();
   private closed = false;
+  private opening = new Set<string>();
+  private releaseHours: ReadonlySet<bigint>;
   private decisions = new Map<string, string>();
   constructor(
     readonly chain: Pick<
@@ -43,12 +45,35 @@ export class Engine {
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
     readonly logger: Logger = log,
-  ) {}
+    releaseHours: readonly bigint[] = [],
+  ) { this.releaseHours = new Set(releaseHours); }
+  private canOpen(t0: bigint) {
+    const now = this.chain.now();
+    return this.chain.config !== undefined &&
+      ![...this.chain.candles.values()].some((x) => x.value.t0 === t0) &&
+      now >= t0 - 86400n &&
+      now < t0 - BigInt(this.chain.config.buyCutoff) - 30n;
+  }
   private actions(): Action[] {
     const now = this.chain.now(),
       out: Action[] = [];
+    for (const t0 of this.releaseHours) {
+      const key = `open:${t0}`;
+      if (this.canOpen(t0) && !this.abandoned.has(key)) {
+        out.push({ key, kind: "open", t0 });
+      } else {
+        if (this.opening.has(key) &&
+            [...this.chain.candles.values()].some((x) => x.value.t0 === t0)) {
+          this.opening.delete(key);
+          this.logger({ event: "recorded", kind: "open", t0 });
+        }
+        if (this.pending.has(key) || this.prepared.has(key) || this.budget.waiting.has(key))
+          this.complete(key);
+      }
+    }
     for (const [key, { value: c }] of this.chain.candles) {
-      if (![...this.chain.tickets.values()].some((x) => x.value.t0 === c.t0))
+      if (!this.releaseHours.has(c.t0) &&
+          ![...this.chain.tickets.values()].some((x) => x.value.t0 === c.t0))
         continue;
       for (let j = 0; j < 13; j++) {
         const k = `read:${key}:${j}`,
@@ -185,6 +210,7 @@ export class Engine {
     return false;
   }
   private eligible(a: Action) {
+    if (a.kind === "open") return this.canOpen(a.t0) && !this.abandoned.has(a.key);
     const c = this.candle(a),
       v = this.chain.feed;
     if (a.kind === "settle") return this.chain.now() >= settleAfter(c);
@@ -278,6 +304,7 @@ export class Engine {
           a.key,
           `${this.chain.feed.publishTs}:${this.chain.feed.price}`,
         );
+      if (a.kind === "open") this.opening.add(a.key);
       this.port.send(p, this.chain.feed);
     }
   }
@@ -290,7 +317,8 @@ export class Engine {
     void this.port
       .prepare(a, price)
       .then((p) => {
-        if (!this.closed) {
+        if (!this.closed && (a.kind !== "open" ||
+            (this.canOpen(a.t0) && !this.abandoned.has(a.key)))) {
           this.prepared.set(a.key, p);
           this.preparing.delete(a.key);
           this.update();
@@ -312,6 +340,10 @@ export class Engine {
       this.endedMarks.add(p.action.ticket!);
     if (p.action.kind === "read" && error === "ReadFilled") {
       this.abandoned.add(p.action.key);
+    }
+    if (p.action.kind === "open") {
+      if (error === "BuyClosed") this.abandoned.add(p.action.key);
+      this.next.set(p.action.key, Date.now() + 2000);
     }
     if (p.action.kind === "settle")
       this.next.set(p.action.key, Date.now() + 2000);
