@@ -6,6 +6,7 @@ import { getCompiledTransactionMessageDecoder, getTransactionDecoder, type Instr
 import { Harness, accountData } from "../../program/tests/harness.js";
 import * as s from "../../program/client/index.js";
 import { releaseHours, RELEASE_HOURS } from "../src/common/release-hours.js";
+import schedule from "../src/common/release-hours.json" with { type: "json" };
 import { Engine, type EnginePort } from "../src/keeper/engine.js";
 import { createPrepare } from "../src/keeper/main.js";
 import { CreationBudget } from "../src/keeper/budget.js";
@@ -17,9 +18,9 @@ import { DovesRecorder } from "../src/tape/doves.js";
 import { Publisher } from "../src/tape/publish.js";
 const T = RELEASE_HOURS[1];
 const flush = async () => { for (let i=0;i<20;i++) await new Promise<void>(r=>setTimeout(r,5)); };
-async function fixture(hours: readonly bigint[] = []) {
-  const h=await Harness.create(), ref=await h.ref(T);
-  let now=T-86401n;
+async function fixture(hours: readonly bigint[] = [], t0 = T) {
+  const h=await Harness.create(), ref=await h.ref(t0);
+  let now=t0-86401n;
   const chain={ configKey:h.config, config:s.getConfigDecoder().decode(accountData(h.svm,h.config)), candles:new Map(), tickets:new Map(), now:()=>now } as unknown as Chain;
   const budget=new CreationBudget({call:vi.fn()} as any,h.marker.address,50000000n,0n); budget.ready=true;
   const sent:Prepared[]=[], logs:any[]=[], ixs=new Map<string,readonly Instruction[]>();
@@ -96,6 +97,15 @@ it("drives thirteen actual program reads without a ticket, excluding unlisted ca
     await x.h.send(`read ${j}`,x.ixs.get(p.action.key)!,x.h.marker);x.sync();x.engine.update();
   }
   expect(x.sent).toHaveLength(13);expect(x.h.candleState(x.ref).reads.every(r=>r.price>0n)).toBe(true);expect(x.h.candleState(other).reads.every(r=>r.price===0n)).toBe(true);expect(x.chain.tickets.size).toBe(0);x.engine.close();
+});
+it("opens and reads the GDP hour of the shipped schedule",async()=>{
+  const G=1795613340n;expect(schedule.find(r=>r.t===Number(G+60n))?.type).toBe('GDP');expect(RELEASE_HOURS).toContain(G);
+  const x=await fixture(RELEASE_HOURS,G);x.engine.update();await flush();expect(x.sent).toHaveLength(0);
+  x.setNow(G-86400n);x.engine.update();await flush();expect(x.sent.map(p=>[p.action.kind,p.action.t0])).toEqual([['open',G]]);
+  await x.h.send('open GDP',x.ixs.get(x.sent[0].action.key)!,x.h.marker);x.sync();x.engine.update();
+  const price=10000000000n;x.setNow(G);x.h.price(price,G);x.chain.feed={price,publishTs:G,source:'poll',recvMs:Date.now(),slot:1};
+  x.engine.update();await flush();const p=x.sent.at(-1)!;expect([p.action.kind,p.action.j,p.action.t0]).toEqual(['read',0,G]);
+  await x.h.send('read 0',x.ixs.get(p.action.key)!,x.h.marker);x.sync();expect(x.h.candleState(x.ref).reads[0].price).toBe(price);x.engine.close();
 });
 it("publishes ticketless releases at settleAfter, including voids and late discovery",async()=>{
   const x=await fixture([T]);x.setNow(T-100n);await x.h.send('release',x.h.openCandleIx(x.ref));x.sync();
