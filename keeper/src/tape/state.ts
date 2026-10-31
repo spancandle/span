@@ -5,7 +5,7 @@ import {
   settleAfter,
   type Candle,
 } from "../../../program/client/index.js";
-import type { Chain } from "../keeper/chain.js";
+import { spanHeld, type Chain } from "../keeper/chain.js";
 import type { RpcPool } from "../common/rpc.js";
 import type { History } from "./history.js";
 // Mint decimals never change, so one successful read is kept for the process.
@@ -163,6 +163,7 @@ export function liveDocuments(
         strikeBps: t.strikeBps,
         state: t.state === TicketState.Open ? "Open" : "Sold",
         spanLoaded: String(t.spanLoaded),
+        spanHeld: String(spanHeld(t, chain.spanHolds?.get(address))),
         stepBps: t.stepBps,
         marker: t.marker,
         tailHigh: String(t.tailHigh),

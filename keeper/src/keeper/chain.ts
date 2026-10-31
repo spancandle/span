@@ -8,7 +8,7 @@ import {
   type ReadonlyUint8Array,
   type TransactionSigner,
 } from "@solana/kit";
-import { findAssociatedTokenPda } from "@solana-program/token";
+import { findAssociatedTokenPda, getTokenDecoder, AccountState } from "@solana-program/token";
 import * as s from "../../../program/client/index.js";
 import { TOKEN, TOKEN_2022 } from "../../../program/client/constants.js";
 import { getTokenSize } from "@solana-program/token-2022";
@@ -18,6 +18,13 @@ import { parseFeed, type FeedValue } from "../common/feed.js";
 import { log, type Logger } from "../common/log.js";
 export const CLOCK = "SysvarC1ock11111111111111111111111111111111";
 export const bytes = (raw: any) => Buffer.from(raw?.data?.[0] ?? "", "base64");
+export type SpanHoldRead = { amount: bigint; burned: bigint; slot: number; read: number };
+// Each ticket burn increases burned by the amount removed from the holding.
+export function spanHeld(t: Pick<s.Ticket, "spanLoaded" | "burned">, held?: SpanHoldRead) {
+  if (t.spanLoaded === 0n) return 0n;
+  const amount = held ? held.amount + held.burned - t.burned : t.spanLoaded - t.burned;
+  return amount > 0n ? amount : 0n;
+}
 export type Live<T> = { value: T; slot: number; data: string };
 export const filter = (disc: ReadonlyUint8Array) => [
   { memcmp: { offset: 0, bytes: getBase58Decoder().decode(disc) } },
@@ -49,6 +56,9 @@ export class Chain {
   candles = new Map<Address, Live<s.Candle>>();
   tickets = new Map<Address, Live<s.Ticket>>();
   feed?: FeedValue;
+  spanHolds = new Map<Address, SpanHoldRead>();
+  // Assigned before the RPC starts, so an earlier in-flight read cannot clear a later shortfall.
+  spanRead = 0;
   slot = 0;
   height = 0n;
   lastFullMs = 0;
@@ -70,6 +80,7 @@ export class Chain {
     readonly rpc: RpcPool,
     readonly ws: Subscriptions,
     readonly logger: Logger = log,
+    readonly keeper?: Address,
   ) {}
   now() {
     return BigInt(
@@ -199,6 +210,78 @@ export class Chain {
     );
     this.lastReadMs = Date.now();
   }
+  async pollSpanHolds(role: "keeper" | "tape") {
+    const config = this.config, now = this.now();
+    const mint = config ? unwrapOption(config.spanMint) : null;
+    const program = config ? unwrapOption(config.spanTokenProgram) : null;
+    const eligible = (key: Address) => {
+      const t = this.tickets.get(key)?.value;
+      if (!t || t.state !== s.TicketState.Sold || t.spanLoaded === 0n) return false;
+      if (role === "tape") return true;
+      const c = [...this.candles.values()].find(x => x.value.t0 === t.t0)?.value;
+      return t.marker === this.keeper && !!c && now >= t.t0 &&
+        now <= t.t0 + 3600n + BigInt(c.ageLimit);
+    };
+    const keys = mint && (program === TOKEN || program === TOKEN_2022)
+      ? [...this.tickets.keys()].filter(eligible) : [];
+    const keep = new Set(keys);
+    for (const key of this.spanHolds.keys()) if (!keep.has(key)) this.spanHolds.delete(key);
+    if (!keys.length) return;
+    const batches = Array.from({ length: Math.ceil(keys.length / 50) },
+      (_, i) => keys.slice(i * 50, (i + 1) * 50));
+    await Promise.all(batches.map(async (batch) => {
+      try {
+        const holds = await Promise.all(batch.map(async key => (await s.findSpanHoldPda(key))[0]));
+        const read = ++this.spanRead;
+        const accounts = batch.flatMap((key, i) => [key, holds[i]]);
+        const v = await this.rpc.call("getMultipleAccounts", [accounts, {
+          encoding: "base64", commitment: "processed",
+        }], "normal", "span-holds");
+        if (!Number.isSafeInteger(v?.context?.slot) || !Array.isArray(v.value) || v.value.length !== accounts.length)
+          throw Error("Invalid SPAN account response");
+        if (!this.config || unwrapOption(this.config.spanMint) !== mint ||
+            unwrapOption(this.config.spanTokenProgram) !== program) return;
+        for (let i = 0; i < batch.length; i++) {
+          const key = batch[i], ticket = v.value[i * 2], raw = v.value[i * 2 + 1], old = this.spanHolds.get(key);
+          if (!eligible(key) || (old && (v.context.slot < old.slot || read <= old.read))) continue;
+          let burned: bigint;
+          try {
+            const data = bytes(ticket);
+            if (ticket?.owner !== s.SPAN_PROGRAM_ADDRESS || data.length !== 173 ||
+                !s.TICKET_DISCRIMINATOR.every((x, j) => data[j] === x))
+              throw Error("Invalid SPAN ticket");
+            burned = s.getTicketDecoder().decode(data).burned;
+          } catch {
+            this.logger({ event: "invalid-span-ticket", ticket: key });
+            continue;
+          }
+          let amount = 0n;
+          if (raw !== null) {
+            const data = bytes(raw);
+            if (raw.owner !== program || data.length < 165 ||
+                (program === TOKEN && data.length !== 165) ||
+                (program === TOKEN_2022 && data.length > 165 && data[165] !== 2)) {
+              this.logger({ event: "invalid-span-hold", ticket: key });
+              continue;
+            }
+            try {
+              const token = getTokenDecoder().decode(data.subarray(0, 165));
+              if (token.mint !== mint || token.owner !== key || token.state === AccountState.Uninitialized)
+                throw Error("Invalid SPAN account");
+              amount = token.amount;
+            } catch {
+              this.logger({ event: "invalid-span-hold", ticket: key });
+              continue;
+            }
+          }
+          this.spanHolds.set(key, { amount, burned, slot: v.context.slot, read });
+        }
+        this.onChange();
+      } catch {
+        this.logger({ event: "span-hold-read-error", accounts: batch.length * 2 });
+      }
+    }));
+  }
   async pollConfig() {
     this.ingestConfig(await account(this.rpc, this.configKey));
     this.lastReadMs = Date.now();
@@ -297,7 +380,10 @@ export class Chain {
         }
         if (at - programs >= (role === "tape" ? 5000 : active ? 2000 : 15000)) {
           programs = at;
-          this.job("programs", () => this.pollPrograms());
+          this.job("programs", async () => {
+            await this.pollPrograms();
+            await this.pollSpanHolds(role);
+          });
         }
         if (at - config >= (role === "tape" ? 5000 : 15000)) {
           config = at;

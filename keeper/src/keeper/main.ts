@@ -85,7 +85,7 @@ export async function runKeeper() {
   const rpc = new RpcPool(c);
   await rpc.initialize();
   const ws = new Subscriptions(rpc),
-    chain = new Chain(rpc, ws);
+    chain = new Chain(rpc, ws, log, payer.address);
   await chain.init();
   const record = new HeightRecord(
     resolve(

@@ -88,6 +88,7 @@ export const schemas: Record<string, Schema> = {
         strikeBps: "number",
         state: "string",
         spanLoaded: "integerString",
+        spanHeld: "integerString",
         stepBps: "number",
         marker: "string",
         tailHigh: "integerString",

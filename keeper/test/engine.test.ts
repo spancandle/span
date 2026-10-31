@@ -196,6 +196,11 @@ it("S2(a,b,c,d,e,f) gives pending reads precedence, re-evaluates latest value af
   x.engine.result(next, "SpanShort", "signature");
   await x.feed(x.t.t0 + 304n, 10_500_000_000n);
   expect(x.sent.filter((s) => s.p.action.kind === "mark")).toHaveLength(2);
+  expect(x.engine.endedMarks.has(x.t.ticket)).toBe(false);
+  x.chain.spanHolds = new Map([[x.t.ticket, { amount: 100000n, burned: x.h.ticketState(x.t).burned, slot: 1, read: 1 }]]);
+  x.chain.spanRead = 1;
+  await x.feed(x.t.t0 + 305n, 10_600_000_000n);
+  expect(x.sent.filter((s) => s.p.action.kind === "mark")).toHaveLength(3);
   const y = await setup();
   y.chain.tickets.get(y.t.ticket)!.value.marker = y.h.stranger.address;
   y.h.clock(y.t.t0);

@@ -7,7 +7,7 @@ import {
   type Candle,
   type Ticket,
 } from "../../../program/client/index.js";
-import type { Chain } from "./chain.js";
+import { spanHeld, type Chain } from "./chain.js";
 import type { FeedValue } from "../common/feed.js";
 import type { Action, Prepared } from "./sender.js";
 import type { CreationBudget } from "./budget.js";
@@ -26,6 +26,7 @@ export class Engine {
   readonly abandoned = new Set<string>();
   readonly seen = new Map<string, FeedValue[]>();
   readonly endedMarks = new Set<string>();
+  private shortMarks = new Map<string, number>();
   private preparing = new Set<string>();
   private maximum = new Map<string, bigint>();
   private marked = new Map<string, string>();
@@ -40,7 +41,7 @@ export class Engine {
     readonly chain: Pick<
       Chain,
       "candles" | "tickets" | "config" | "feed" | "now"
-    >,
+    > & Partial<Pick<Chain, "spanHolds" | "spanRead">>,
     readonly keeper: Address,
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
@@ -159,7 +160,7 @@ export class Engine {
         this.chain.config &&
         unwrapOption(this.chain.config.spanMint) &&
         c.reads[0].price > 0n &&
-        t.spanLoaded - t.burned >= this.chain.config.burnPerMark &&
+        this.funded(key, t) &&
         !this.endedMarks.has(key)
       )
         out.push({
@@ -183,6 +184,19 @@ export class Engine {
       )
         this.complete(key);
     return out;
+  }
+  private funded(key: string, t: Ticket) {
+    const held = this.chain.spanHolds?.get(key as Address),
+      balance = spanHeld(t, held),
+      available = held && held.amount < balance ? held.amount : balance,
+      burn = this.chain.config!.burnPerMark,
+      short = this.shortMarks.get(key);
+    if (short !== undefined) {
+      if (!held || held.read <= short || available < burn) return false;
+      this.shortMarks.delete(key);
+      this.marked.delete(`mark:${key}`);
+    }
+    return available >= burn;
   }
   private complete(key: string) {
     this.pending.delete(key);
@@ -333,11 +347,12 @@ export class Engine {
     if (this.pending.get(p.action.key) !== p) return;
     this.pending.delete(p.action.key);
     this.prepared.delete(p.action.key);
-    if (
-      p.action.kind === "mark" &&
-      ["CapReached", "SpanShort"].includes(error ?? "")
-    )
+    if (p.action.kind === "mark" && error === "CapReached")
       this.endedMarks.add(p.action.ticket!);
+    if (p.action.kind === "mark" && error === "SpanShort") {
+      const key = p.action.ticket!;
+      this.shortMarks.set(key, this.chain.spanRead ?? this.chain.spanHolds?.get(key as Address)?.read ?? 0);
+    }
     if (p.action.kind === "read" && error === "ReadFilled") {
       this.abandoned.add(p.action.key);
     }
