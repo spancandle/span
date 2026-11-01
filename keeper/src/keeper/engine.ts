@@ -48,6 +48,13 @@ export class Engine {
     readonly logger: Logger = log,
     releaseHours: readonly bigint[] = [],
   ) { this.releaseHours = new Set(releaseHours); }
+  /** Replaces the hours to open and read without a ticket; an open still waiting for an hour that left is dropped. */
+  listHours(t0s: readonly bigint[]) {
+    const next = new Set(t0s);
+    for (const t0 of this.releaseHours)
+      if (!next.has(t0)) this.complete(`open:${t0}`);
+    this.releaseHours = next;
+  }
   private canOpen(t0: bigint) {
     const now = this.chain.now();
     return this.chain.config !== undefined &&

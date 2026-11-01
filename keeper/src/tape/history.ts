@@ -1,5 +1,6 @@
-import { address } from "@solana/kit";
+import { address, getBase58Encoder } from "@solana/kit";
 import * as s from "../../../program/client/index.js";
+import { cleanText } from "../../../program/client/reason.js";
 import { decodeDevFeedEvents } from "../common/feed.js";
 import { Store } from "../common/sqlite.js";
 import { json } from "../common/env.js";
@@ -29,6 +30,38 @@ export function transactionEvents(tx: any) {
     }
   return out;
 }
+export const MEMO = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+/** The reason written as a memo in the sale that opened a candle: the first top-level Memo v2 instruction of a
+ *  transaction that emitted CandleOpened and TicketOpened for the same hour, kept only as span keeps a reason. */
+export function hourReason(
+  tx: any,
+  events: { name: string; data: any }[] = transactionEvents(tx),
+) {
+  const opened = events.find((e) => e.name === "CandleOpened");
+  if (
+    !opened ||
+    !events.some(
+      (e) => e.name === "TicketOpened" && e.data.t0 === opened.data.t0,
+    )
+  )
+    return null;
+  const keys = transactionKeys(tx),
+    ix = tx.transaction.message.instructions.find(
+      (x: any) => keys[x.programIdIndex] === MEMO,
+    );
+  if (!ix) return null;
+  let text: string;
+  try {
+    text = utf8.decode(getBase58Encoder().encode(ix.data));
+  } catch {
+    return null;
+  }
+  const why = cleanText(text, 100);
+  return why === null
+    ? null
+    : { t0: String(opened.data.t0), why, opener: keys[0] };
+}
 export const clean = (value: any): any => {
   if (typeof value === "bigint") return value.toString();
   if (value === null || typeof value !== "object") return value;
@@ -51,6 +84,22 @@ export class History {
     readonly feedSample: (sig: string, v: any, slot: number) => void,
     readonly onGap: () => void = () => {},
   ) {}
+  private reason(sig: string, tx: any, events?: { name: string; data: any }[]) {
+    const r = hourReason(tx, events);
+    if (r)
+      this.store.db
+        .prepare("INSERT OR IGNORE INTO hour_reason VALUES(?,?,?,?)")
+        .run(r.t0, r.why, r.opener, sig);
+  }
+  /** Rebuilds the seller reasons from the stored CandleOpened events and their transactions; running it again changes nothing. */
+  refillReasons() {
+    const rows = this.store.db
+      .prepare(
+        "SELECT DISTINCT e.sig sig,t.raw raw FROM events e JOIN transactions t ON t.sig=e.sig WHERE e.name='CandleOpened'",
+      )
+      .all() as { sig: string; raw: string }[];
+    for (const row of rows) this.reason(row.sig, JSON.parse(row.raw));
+  }
   ingest(sig: string, tx: any) {
     const events = transactionEvents(tx);
     this.recentCache = undefined;
@@ -59,6 +108,7 @@ export class History {
       this.store.db
         .prepare("INSERT OR IGNORE INTO transactions VALUES(?,?,?,?,?)")
         .run(sig, tx.slot, tx.blockTime, Date.now(), json(tx));
+      this.reason(sig, tx, events);
       events.forEach((event, i) => {
         const data = clean(event.data);
         if (event.name === "Settled")

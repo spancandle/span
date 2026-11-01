@@ -14,6 +14,8 @@ import { ChainReader } from "./chain.js";
 import { httpServer, atomicFile } from "./http.js";
 import { readKeeperTelemetry } from "../common/telemetry.js";
 import { ROOT } from "../common/env.js";
+import { RELEASE_HOURS } from "../common/release-hours.js";
+import { EventHoursFile, eventHoursPath } from "../common/event-hours.js";
 export async function runTape() {
   const rpc = new RpcPool(cluster());
   await rpc.initialize();
@@ -41,13 +43,26 @@ export async function runTape() {
       if (recorder.recording) recorder.gap("program-history");
     },
   );
+  history.refillReasons();
+  /* listed hours, read again whenever the file changes; without the file there are none */
+  const listPath = eventHoursPath(),
+    listed = listPath ? new EventHoursFile(listPath) : null;
+  listed?.read();
+  const stopHours = listed?.watch(() => {}) ?? (() => {});
   const decimals = new SpanDecimals(rpc),
     spanMint = () =>
       chain.config ? (unwrapOption(chain.config.spanMint) ?? null) : null,
     readDecimals = () =>
       guarded("span-mint-error", () => decimals.refresh(spanMint()));
-  const publisher = new Publisher(store, chain, history, recorder, pub, (m) =>
-      decimals.get(m),
+  const publisher = new Publisher(
+      store,
+      chain,
+      history,
+      recorder,
+      pub,
+      (m) => decimals.get(m),
+      () => [...RELEASE_HOURS, ...(listed?.t0s() ?? [])],
+      () => ({ hours: listed?.hours ?? [], hide: listed?.hide ?? [] }),
     ),
     chainReader = new ChainReader(rpc, pub, history),
     server = httpServer(pub);
@@ -131,6 +146,7 @@ export async function runTape() {
     }, 60000),
   ];
   const close = () => {
+    stopHours();
     timers.forEach(clearInterval);
     chain.close();
     rpc.close();

@@ -12,6 +12,7 @@ import { prepareTransaction, Sender, type Action } from "./sender.js";
 import { Engine } from "./engine.js";
 import { Overlay } from "./overlay.js";
 import { RELEASE_HOURS } from "../common/release-hours.js";
+import { EventHoursFile, eventHoursPath } from "../common/event-hours.js";
 import { keeperTelemetry } from "../common/telemetry.js";
 /** The same preparation path is used by the running keeper and read-only simulations. */
 export async function createPrepare(
@@ -111,6 +112,7 @@ export async function runKeeper() {
     () => chain.now(),
   );
   const prepare = await createPrepare(rpc, payer, chain, priorities, () => latest);
+  const releases = process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : [];
   const engine = new Engine(
     chain,
     payer.address,
@@ -123,8 +125,22 @@ export async function runKeeper() {
     },
     budget,
     log,
-    process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : [],
+    releases,
   );
+  /* listed hours join the release hours on the same path, read again whenever the file changes */
+  const listPath = eventHoursPath();
+  let stopHours = () => {};
+  if (listPath) {
+    const listed = new EventHoursFile(listPath),
+      apply = () => {
+        engine.listHours([...releases, ...listed.t0s()]);
+        log({ event: "hours", listed: listed.hours.length });
+        engine.update();
+      };
+    listed.read();
+    apply();
+    stopHours = listed.watch(apply);
+  }
   sender.done = (p, e, stage) => {
     engine.result(p, e, stage);
     if (
@@ -239,6 +255,7 @@ export async function runKeeper() {
   log({ event: "keeper-ready", cluster: c, address: payer.address });
   const close = () => {
     closeTelemetry();
+    stopHours();
     timers.forEach(clearInterval);
     engine.close();
     sender.close();

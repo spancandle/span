@@ -12,6 +12,7 @@ import { json } from "../common/env.js";
 import { log, safeError } from "../common/log.js";
 import { getCandleDecoder } from "../../../program/client/index.js";
 import { RELEASE_HOURS } from "../common/release-hours.js";
+import type { EventHours } from "../common/event-hours.js";
 export const delta = (xs: (string | number | bigint)[]) =>
   xs.map((x, i) => String(i ? BigInt(x) - BigInt(xs[i - 1]) : x)).join(",");
 const sha1 = (x: string) => createHash("sha1").update(x).digest("hex");
@@ -22,6 +23,8 @@ export class Publisher {
   private historyAt = 0;
   private historyRevision = -1;
   private historyHours = "";
+  private hoursContent = "";
+  private hoursKey = "";
   // Closed candles of the last history.json, and per t0 the hash of the
   // candle path body stored and of the bytes written by this process.
   private pathTs: string[] = [];
@@ -36,7 +39,9 @@ export class Publisher {
     readonly recorder: DovesRecorder,
     readonly dir: string,
     readonly spanDecimals: (mint: string) => number | null = () => null,
-    readonly releaseHours: readonly bigint[] = RELEASE_HOURS,
+    // The hours history keeps without a ticket; a function follows a list that is read again.
+    readonly releaseHours: readonly bigint[] | (() => readonly bigint[]) = RELEASE_HOURS,
+    readonly listed: () => EventHours = () => ({ hours: [], hide: [] }),
   ) {
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS candle_path(t0 TEXT PRIMARY KEY,raw TEXT NOT NULL)",
@@ -117,10 +122,42 @@ export class Publisher {
     };
   }
   private closedReleaseHours() {
-    const hours = new Set(this.releaseHours), now = this.chain.now();
+    const hours = new Set(
+        typeof this.releaseHours === "function" ? this.releaseHours() : this.releaseHours,
+      ),
+      now = this.chain.now();
     return [...this.chain.candles.values()]
       .filter(({ value: c }) => hours.has(c.t0) && now >= settleAfter(c))
       .map(({ value: c }) => String(c.t0)).sort();
+  }
+  /** The listed hours with their reasons, then the reasons sellers wrote in the transactions that opened candles. */
+  hoursDocument() {
+    const { hours, hide } = this.listed(),
+      listed = new Set(hours.map((h) => String(h.t - 60))),
+      hidden = new Set(hide.map((t) => String(t - 60)));
+    const sellers = (
+      this.store.db.prepare("SELECT t0,why,sig FROM hour_reason").all() as {
+        t0: string;
+        why: string;
+        sig: string;
+      }[]
+    )
+      .filter((r) => !listed.has(r.t0) && !hidden.has(r.t0))
+      .sort((a, b) => (BigInt(b.t0) > BigInt(a.t0) ? 1 : -1))
+      .slice(0, 500)
+      .map((r) => ({ t0: r.t0, name: null, why: r.why, source: null, by: "seller", sig: r.sig }));
+    const rows = [
+      ...hours.map((h) => ({
+        t0: String(h.t - 60),
+        name: h.name,
+        why: h.why,
+        source: h.source,
+        by: "list",
+        sig: null,
+      })),
+      ...sellers,
+    ].sort((a, b) => (BigInt(a.t0) < BigInt(b.t0) ? -1 : 1));
+    return { v: 1, generated: Date.now(), hours: rows };
   }
   historyDocument() {
     const receipts = this.history
@@ -389,5 +426,16 @@ export class Publisher {
       this.historyHours = hours;
     }
     this.candlePaths(all);
+    const list = this.listed(),
+      key = `${this.store.revision}:${json(list)}`;
+    if (key !== this.hoursKey) {
+      const doc = this.hoursDocument(),
+        content = json(doc.hours);
+      if (content !== this.hoursContent) {
+        atomicFile(this.dir, "hours.json", doc);
+        this.hoursContent = content;
+      }
+      this.hoursKey = key;
+    }
   }
 }

@@ -7,6 +7,7 @@
     "keeper": "node --import tsx src/keeper/main.ts",
     "tape": "node --import tsx src/tape/main.ts",
     "settle": "node --import tsx src/cli/settle.ts",
+    "hours": "node --import tsx src/cli/hours.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --reporter=verbose",
     "verify:tape": "python3 test/recalculate.py"

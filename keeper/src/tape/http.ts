@@ -49,6 +49,7 @@ export function httpServer(
         "/tickets.json",
         "/feed.json",
         "/history.json",
+        "/hours.json",
         "/chain.json",
         "/status.json",
       ].includes(path)

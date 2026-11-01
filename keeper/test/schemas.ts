@@ -187,6 +187,20 @@ export const schemas: Record<string, Schema> = {
       }),
     ),
   }),
+  hours: object({
+    v: "number",
+    generated: "number",
+    hours: array(
+      object({
+        t0: "integerString",
+        name: nullable("string"),
+        why: "string",
+        source: nullable("string"),
+        by: "string",
+        sig: nullable("string"),
+      }),
+    ),
+  }),
   chain: object({
     v: "number",
     generated: "number",
