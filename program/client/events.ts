@@ -16,6 +16,7 @@ const decoders = {
   Withdrawn: generated.getWithdrawnEventDecoder(),
   Bought: generated.getBoughtEventDecoder(),
   SpanLoaded: generated.getSpanLoadedEventDecoder(),
+  MarkerSet: generated.getMarkerSetEventDecoder(),
   Read: generated.getReadEventDecoder(),
   Marked: generated.getMarkedEventDecoder(),
   Settled: generated.getSettledEventDecoder(),

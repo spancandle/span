@@ -2,7 +2,7 @@
   "address": "ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd",
   "metadata": {
     "name": "span",
-    "version": "0.1.0",
+    "version": "1.10.0",
     "spec": "0.1.0"
   },
   "instructions": [
@@ -837,6 +837,102 @@
       "args": []
     },
     {
+      "name": "set_marker",
+      "discriminator": [
+        198,
+        9,
+        12,
+        182,
+        56,
+        136,
+        79,
+        11
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "marker",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "set_params",
       "discriminator": [
         27,
@@ -1317,6 +1413,19 @@
       ]
     },
     {
+      "name": "MarkerSet",
+      "discriminator": [
+        211,
+        84,
+        8,
+        79,
+        130,
+        19,
+        48,
+        229
+      ]
+    },
+    {
       "name": "ParamsSet",
       "discriminator": [
         57,
@@ -1576,6 +1685,10 @@
     {
       "code": 6041,
       "name": "Overflow"
+    },
+    {
+      "code": 6042,
+      "name": "MarkClosed"
     }
   ],
   "types": [
@@ -1848,6 +1961,34 @@
           {
             "name": "span_left",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarkerSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_marker",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_marker",
+            "type": "pubkey"
           }
         ]
       }

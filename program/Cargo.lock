@@ -1904,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "span"
-version = "0.1.0"
+version = "1.10.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",

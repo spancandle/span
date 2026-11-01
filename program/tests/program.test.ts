@@ -384,8 +384,8 @@ describe("P3 P4 P5 sale and account creation", () => {
         h.buyer,
         "InvalidValue",
       );
-      h.clock(1195n);
-      await h.send("load_closed", h.loadIx(t), h.buyer, "BuyClosed");
+      h.clock(t.t0 + 3600n + BigInt(h.candleState(t).ageLimit) + 1n);
+      await h.send("load_closed", h.loadIx(t), h.buyer, "MarkClosed");
       h.clock(1000n);
       await h.send("load_span", h.loadIx(t), h.buyer);
       h.measure(program === TOKEN ? "SpanClassic" : "Span2022", t.spanHold);

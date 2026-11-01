@@ -172,6 +172,19 @@ pub struct LoadGate<'info> {
 
 #[event_cpi]
 #[derive(Accounts)]
+pub struct SetMarker<'info> {
+    pub buyer: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(mut, seeds = [b"ticket", &ticket.id.to_le_bytes()], bump = ticket.bump,
+        constraint = ticket.t0 == candle.t0 @ SpanError::InvalidValue)]
+    pub ticket: Box<Account<'info, Ticket>>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
 pub struct LoadSpan<'info> {
     pub gate: LoadGate<'info>,
     #[account(init, payer = gate.buyer, seeds = [b"span", gate.ticket.key().as_ref()], bump,
@@ -196,12 +209,8 @@ pub fn load_allowed(
     require!(ticket.state == TicketState::Sold, SpanError::NotSold);
     require!(ticket.buyer == Some(buyer.key()), SpanError::NotBuyer);
     require!(
-        Clock::get()?.unix_timestamp
-            < candle
-                .t0
-                .checked_sub(i64::from(candle.buy_cutoff))
-                .ok_or(SpanError::Overflow)?,
-        SpanError::BuyClosed
+        Clock::get()?.unix_timestamp <= crate::mark_deadline(candle)?,
+        SpanError::MarkClosed
     );
     require!(config.span_mint.is_some(), SpanError::SpanNotSet);
     require!(ticket.span_loaded == 0, SpanError::AlreadyLoaded);

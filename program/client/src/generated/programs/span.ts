@@ -54,6 +54,7 @@ import {
   getOpenTicketInstructionAsync,
   getReadInstructionAsync,
   getSetFeedInstructionAsync,
+  getSetMarkerInstructionAsync,
   getSetParamsInstructionAsync,
   getSetSpanInstructionAsync,
   getSettleInstructionAsync,
@@ -66,6 +67,7 @@ import {
   parseOpenTicketInstruction,
   parseReadInstruction,
   parseSetFeedInstruction,
+  parseSetMarkerInstruction,
   parseSetParamsInstruction,
   parseSetSpanInstruction,
   parseSettleInstruction,
@@ -84,12 +86,14 @@ import {
   type ParsedOpenTicketInstruction,
   type ParsedReadInstruction,
   type ParsedSetFeedInstruction,
+  type ParsedSetMarkerInstruction,
   type ParsedSetParamsInstruction,
   type ParsedSetSpanInstruction,
   type ParsedSettleInstruction,
   type ParsedWithdrawInstruction,
   type ReadAsyncInput,
   type SetFeedAsyncInput,
+  type SetMarkerAsyncInput,
   type SetParamsAsyncInput,
   type SetSpanAsyncInput,
   type SettleAsyncInput,
@@ -160,6 +164,7 @@ export enum SpanEvent {
   FeedSet,
   Initialized,
   Marked,
+  MarkerSet,
   ParamsSet,
   Read,
   Settled,
@@ -227,6 +232,17 @@ export function identifySpanEvent(
     )
   ) {
     return SpanEvent.Marked;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([211, 84, 8, 79, 130, 19, 48, 229]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.MarkerSet;
   }
   if (
     containsBytes(
@@ -319,6 +335,7 @@ export enum SpanInstruction {
   OpenTicket,
   Read,
   SetFeed,
+  SetMarker,
   SetParams,
   SetSpan,
   Settle,
@@ -421,6 +438,17 @@ export function identifySpanInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([198, 9, 12, 182, 56, 136, 79, 11]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.SetMarker;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([27, 234, 178, 52, 147, 2, 187, 141]),
       ),
       0,
@@ -493,6 +521,9 @@ export type ParsedSpanInstruction<
       instructionType: SpanInstruction.SetFeed;
     } & ParsedSetFeedInstruction<TProgram>)
   | ({
+      instructionType: SpanInstruction.SetMarker;
+    } & ParsedSetMarkerInstruction<TProgram>)
+  | ({
       instructionType: SpanInstruction.SetParams;
     } & ParsedSetParamsInstruction<TProgram>)
   | ({
@@ -564,6 +595,13 @@ export function parseSpanInstruction<TProgram extends string>(
       return {
         instructionType: SpanInstruction.SetFeed,
         ...parseSetFeedInstruction(instruction),
+      };
+    }
+    case SpanInstruction.SetMarker: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.SetMarker,
+        ...parseSetMarkerInstruction(instruction),
       };
     }
     case SpanInstruction.SetParams: {
@@ -648,6 +686,10 @@ export type SpanPluginInstructions = {
   setFeed: (
     input: SetFeedAsyncInput,
   ) => ReturnType<typeof getSetFeedInstructionAsync> & SelfPlanAndSendFunctions;
+  setMarker: (
+    input: SetMarkerAsyncInput,
+  ) => ReturnType<typeof getSetMarkerInstructionAsync> &
+    SelfPlanAndSendFunctions;
   setParams: (
     input: SetParamsAsyncInput,
   ) => ReturnType<typeof getSetParamsInstructionAsync> &
@@ -720,6 +762,11 @@ export function spanProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getSetFeedInstructionAsync(input),
+            ),
+          setMarker: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSetMarkerInstructionAsync(input),
             ),
           setParams: (input) =>
             addSelfPlanAndSendFunctions(

@@ -33,6 +33,7 @@ export async function verifyEvents(
       [r.SpanInstruction.Withdraw]: "Withdrawn",
       [r.SpanInstruction.Buy]: "Bought",
       [r.SpanInstruction.LoadSpan]: "SpanLoaded",
+      [r.SpanInstruction.SetMarker]: "MarkerSet",
       [r.SpanInstruction.Read]: "Read",
       [r.SpanInstruction.Mark]: "Marked",
       [r.SpanInstruction.Settle]: "Settled",
@@ -143,6 +144,15 @@ export async function verifyEvents(
           stepBps: t.stepBps,
           marker: t.marker,
         });
+        break;
+      }
+      case "MarkerSet": {
+        const e = event.data,
+          t = r.getTicketDecoder().decode(bytes(e.ticket)),
+          p = r.getTicketDecoder().decode(old(e.ticket).data);
+        expect(d).toEqual({ ticket: e.ticket, id: t.id, buyer: unwrapOption(t.buyer),
+          oldMarker: p.marker, newMarker: t.marker });
+        expect(t).toEqual({ ...p, marker: t.marker });
         break;
       }
       case "Read": {

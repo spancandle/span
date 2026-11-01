@@ -46,6 +46,10 @@ fn sale_open(candle: &Candle) -> Result<()> {
     Ok(())
 }
 
+fn mark_deadline(candle: &Candle) -> Result<i64> {
+    math::add_time(math::add_time(candle.t0, 3600)?, i64::from(candle.age_limit))
+}
+
 #[program]
 pub mod span {
     use super::*;
@@ -314,6 +318,27 @@ pub mod span {
             t0: t.t0,
             buyer: ctx.accounts.buyer.key(),
             premium
+        });
+        Ok(())
+    }
+
+    pub fn set_marker(ctx: Context<SetMarker>, marker: Pubkey) -> Result<()> {
+        let t = &mut ctx.accounts.ticket;
+        require!(t.state == TicketState::Sold, SpanError::NotSold);
+        require!(t.buyer == Some(ctx.accounts.buyer.key()), SpanError::NotBuyer);
+        require!(t.span_loaded > 0, SpanError::NotLoaded);
+        require!(
+            Clock::get()?.unix_timestamp <= mark_deadline(&ctx.accounts.candle)?,
+            SpanError::MarkClosed
+        );
+        let old_marker = t.marker;
+        t.marker = marker;
+        emit_cpi!(MarkerSet {
+            ticket: t.key(),
+            id: t.id,
+            buyer: ctx.accounts.buyer.key(),
+            old_marker,
+            new_marker: marker,
         });
         Ok(())
     }

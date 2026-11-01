@@ -14,6 +14,7 @@ export * from "./openCandle.js";
 export * from "./openTicket.js";
 export * from "./read.js";
 export * from "./setFeed.js";
+export * from "./setMarker.js";
 export * from "./setParams.js";
 export * from "./setSpan.js";
 export * from "./settle.js";

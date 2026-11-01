@@ -44,4 +44,5 @@ pub enum SpanError {
     WrongOwner,
     ReceiverMismatch,
     Overflow,
+    MarkClosed,
 }

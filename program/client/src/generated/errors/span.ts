@@ -98,6 +98,8 @@ export const SPAN_ERROR__WRONG_OWNER = 0x1797; // 6039
 export const SPAN_ERROR__RECEIVER_MISMATCH = 0x1798; // 6040
 /** Overflow:  */
 export const SPAN_ERROR__OVERFLOW = 0x1799; // 6041
+/** MarkClosed:  */
+export const SPAN_ERROR__MARK_CLOSED = 0x179a; // 6042
 
 export type SpanError =
   | typeof SPAN_ERROR__ALREADY_LOADED
@@ -113,6 +115,7 @@ export type SpanError =
   | typeof SPAN_ERROR__FREEZE_AUTHORITY_MINT
   | typeof SPAN_ERROR__ID_MISMATCH
   | typeof SPAN_ERROR__INVALID_VALUE
+  | typeof SPAN_ERROR__MARK_CLOSED
   | typeof SPAN_ERROR__MISSING_ACCOUNT
   | typeof SPAN_ERROR__NO_OPEN
   | typeof SPAN_ERROR__NOT_ADMIN
@@ -159,6 +162,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [SPAN_ERROR__FREEZE_AUTHORITY_MINT]: ``,
     [SPAN_ERROR__ID_MISMATCH]: ``,
     [SPAN_ERROR__INVALID_VALUE]: ``,
+    [SPAN_ERROR__MARK_CLOSED]: ``,
     [SPAN_ERROR__MISSING_ACCOUNT]: ``,
     [SPAN_ERROR__NO_OPEN]: ``,
     [SPAN_ERROR__NOT_ADMIN]: ``,

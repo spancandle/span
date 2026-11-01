@@ -70,6 +70,14 @@ pub struct SpanLoaded {
     pub marker: Pubkey,
 }
 #[event]
+pub struct MarkerSet {
+    pub ticket: Pubkey,
+    pub id: u64,
+    pub buyer: Pubkey,
+    pub old_marker: Pubkey,
+    pub new_marker: Pubkey,
+}
+#[event]
 pub struct Read {
     pub candle: Pubkey,
     pub t0: i64,

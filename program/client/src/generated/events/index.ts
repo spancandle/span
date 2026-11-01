@@ -11,6 +11,7 @@ export * from "./candleOpened.js";
 export * from "./feedSet.js";
 export * from "./initialized.js";
 export * from "./marked.js";
+export * from "./markerSet.js";
 export * from "./paramsSet.js";
 export * from "./read.js";
 export * from "./settled.js";

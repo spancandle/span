@@ -39,7 +39,7 @@ pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16) -> Result<u64> {
 }
 ```
 
-A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L445-L456):
+A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L470-L481):
 
 ```rust
 let (high, low) = t.high_low(candle);
@@ -110,10 +110,13 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | open_ticket | TicketOpened | Deposit 40 minus premium USDC and set the length |
 | withdraw | Withdrawn | Return collateral while the ticket remains unsold; seller only |
 | buy | Bought | Pay the premium into the vault |
-| load_span | SpanLoaded | Load SPAN and select a reader and stride |
+| load_span | SpanLoaded | First load of SPAN and selection of a reader and stride; buyer only |
+| set_marker | MarkerSet | Change the reader of a loaded Sold ticket; buyer only |
 | read | Read | Fill a scheduled reading during its window |
 | mark | Marked | Record a wick extension; burn SPAN only when it raises the payout |
 | settle | Settled | Distribute USDC and return unburned SPAN |
+
+First loading and reader changes are allowed through `t0 + 3600 + age_limit`, inclusive. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. Buying and selling still close at the buying cutoff.
 
 ## Settlement
 
