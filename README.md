@@ -14,7 +14,7 @@
 
 A US release moves SOL in the hour after the print, and the move can come back before the hour is out. A perp settles that hour on its body, open to close. span settles it on the candle, from the top of the upper wick to the bottom of the lower one.
 
-A candle is 60 minutes and starts on a minute. The site lists one for every scheduled CPI, PPI, jobs and GDP print (08:30 ET) and FOMC decision (14:00 ET), starting one minute before it. A seller opens a ticket with a length, 0 to 5% in 0.25% steps, and puts 40 USDC less the premium into its vault. A buyer pays the premium, 0.10 to 39 USDC. At the close the buyer receives 10 USDC for every 1% of candle past the length, up to the 40 USDC in the vault, and the seller receives the rest. Which way the hour went and where it closed do not enter the payout.
+A candle is 60 minutes. Its start second names its asset: a SOL candle starts on a minute, a BTC candle one second after it and an ETH candle two seconds after. The site lists one for every scheduled CPI, PPI, jobs and GDP print (08:30 ET) and FOMC decision (14:00 ET), starting one minute before it. A seller opens a ticket with a length, 0 to 5% in 0.25% steps, and puts 40 USDC less the premium into its vault. A buyer pays the premium, 0.10 to 39 USDC. At the close the buyer receives 10 USDC for every 1% of candle past the length, up to the 40 USDC in the vault, and the seller receives the rest. Which way the hour went and where it closed do not enter the payout.
 
 Thirteen scheduled reads, one every 300 seconds, draw the candle anyone can record. The part of a long candle past a ticket's length is usually a wick that reached out between two reads right after the print and came back before the next one. A ticket that carries SPAN names a reader who records each new high or low as it happens: one transaction, one slot, one wick. A record that raises the payout burns a fixed amount of SPAN; a record that does not burns nothing. A recorded wick never shrinks.
 
@@ -106,7 +106,7 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | set_span | SpanSet | Choose the mint and burn amount once; admin only |
 | set_feed | FeedSet | Change the validated SOL oracle; admin only |
 | set_params | ParamsSet | Change timing for future candles; admin only |
-| open_candle | CandleOpened | Open a minute-aligned candle |
+| open_candle | CandleOpened | Open a candle on a minute (SOL), or one or two seconds after it (BTC, ETH) |
 | open_ticket | TicketOpened | Deposit 40 minus premium USDC and set the length |
 | withdraw | Withdrawn | Return collateral while the ticket remains unsold; seller only |
 | buy | Bought | Pay the premium into the vault |
@@ -129,6 +129,8 @@ The admin can set SPAN once, change the feed, and change timing parameters withi
 ## Oracle
 
 DOVES SOL account: `FYq2BWQ1V5P1WFBqr3qB2Kb5yHVvSv7upzKodgQE5zXh`, owned by `DoVEsk76QybCEHQGzkvYPWLQu9gzNoZZZt3TPiL597e`. Jupiter perps fill against this price. The account is 394 bytes. Bytes 0–7 are discriminator `70f98bd9d7d0f936`, bytes 8–39 identify wrapped SOL, bytes 168–175 contain an unsigned little-endian price scaled by 100,000,000, byte 176 is 248, and bytes 177–184 contain the signed little-endian publication timestamp. The program validates this layout, owner, asset, positive price and age. Development-only feed commands are excluded from the default build.
+
+BTC candles read only the DOVES BTC account `hUqAT1KQ7eW1i6Csp9CXYtpPfSAvi835V7wKi5fRfmC` and ETH candles only the DOVES ETH account `AFZnHPzy4mvVCffrVwhewHbFc93uTHvDSFrVH7GtfXF1`. Both have the same owner and layout; bytes 8–39 hold the asset's mint, `3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh` for BTC and `7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs` for ETH. Read boundaries and the mark window start from the candle's own start, so a BTC candle's are one second later than the SOL candle's of the same hour.
 
 ## Run a keeper
 

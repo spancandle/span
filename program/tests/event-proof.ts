@@ -191,10 +191,14 @@ export async function verifyEvents(
           spanLeft: tokenAmount(hold) - (t.burned-p.burned),
         });
         expect(e.publishTs).toBe(
-          Buffer.from(bytes(config!.feed)).readBigInt64LE(177),
+          Buffer.from(bytes(r.parseMarkInstruction(own.find(ix =>
+            r.identifySpanInstruction(ix as Instruction & {data: Uint8Array}) === r.SpanInstruction.Mark &&
+            ix.accounts?.some(a => a.address === e.ticket))! as any).accounts.feed.address)).readBigInt64LE(177),
         );
         expect(e.price).toBe(
-          Buffer.from(bytes(config!.feed)).readBigUInt64LE(168),
+          Buffer.from(bytes(r.parseMarkInstruction(own.find(ix =>
+            r.identifySpanInstruction(ix as Instruction & {data: Uint8Array}) === r.SpanInstruction.Mark &&
+            ix.accounts?.some(a => a.address === e.ticket))! as any).accounts.feed.address)).readBigUInt64LE(168),
         );
         break;
       }

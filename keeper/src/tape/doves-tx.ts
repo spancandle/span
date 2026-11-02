@@ -1,6 +1,6 @@
-import { DOVES, SOL_FEED } from "../../../program/client/constants.js";
-export type DovesUpdate = { price: string; publish_ts: number; slot: number };
-/** Recover the selected SOL oracle source from successful UpdateAgPrice2 logs. */
+import { DOVES, SOL_FEED, BTC_FEED, ETH_FEED } from "../../../program/client/constants.js";
+export type DovesUpdate = { feed: string; price: string; publish_ts: number; slot: number };
+/** Recover each selected oracle source from successful UpdateAgPrice2 logs. */
 export function decodeDovesTransaction(tx: any): DovesUpdate[] {
   if (!tx?.meta || tx.meta.err !== null) return [];
   if (!Number.isFinite(tx.slot) || !Number.isFinite(tx.blockTime))
@@ -21,7 +21,8 @@ export function decodeDovesTransaction(tx: any): DovesUpdate[] {
   if (ixs.length !== blocks.length)
     throw Error("Oracle instruction/log count mismatch");
   return ixs.flatMap((ix: any, i: number) => {
-    if (keys[ix.accounts[1]] !== SOL_FEED) return [];
+    const feed=keys[ix.accounts[1]];
+    if (![SOL_FEED,BTC_FEED,ETH_FEED].includes(feed)) return [];
     const chosen = blocks[i]
       .map((line) => /updated from (.+)$/.exec(line)?.[1]?.trim())
       .find(Boolean);
@@ -32,6 +33,6 @@ export function decodeDovesTransaction(tx: any): DovesUpdate[] {
       )
       .find((v) => v?.[1] === chosen);
     if (!v || BigInt(v[2]) <= 0n) throw Error("Selected oracle source missing");
-    return [{ price: v[2], publish_ts: Number(v[3]), slot: tx.slot }];
+    return [{ feed, price: v[2], publish_ts: Number(v[3]), slot: tx.slot }];
   });
 }

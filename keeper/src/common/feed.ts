@@ -9,15 +9,10 @@ import {
   SPAN_PROGRAM_ADDRESS,
   type EventInstruction,
 } from "../../../program/client/index.js";
-import { DOVES, SOL } from "../../../program/client/constants.js";
+import { mintOf, feedOf, type Asset } from "../../../program/client/assets.js";
+import { DOVES, SOL, SOL_FEED } from "../../../program/client/constants.js";
 import type { Cluster } from "./env.js";
-export const devFeedPda = async () =>
-  (
-    await getProgramDerivedAddress({
-      programAddress: SPAN_PROGRAM_ADDRESS,
-      seeds: ["dev_feed"],
-    })
-  )[0];
+export const devFeedPda = (asset: Asset = 0) => feedOf(asset, SOL_FEED, 'devnet');
 export type FeedValue = {
   price: bigint;
   publishTs: bigint;
@@ -29,6 +24,7 @@ export async function parseFeed(
   raw: any,
   key: Address,
   cluster: Cluster,
+  asset: Asset = 0,
 ): Promise<{ price: bigint; publishTs: bigint }> {
   if (!raw) throw Error("FeedInvalid");
   const d = Buffer.from(raw.data[0], "base64");
@@ -37,7 +33,7 @@ export async function parseFeed(
     !(
       cluster === "devnet" &&
       raw.owner === SPAN_PROGRAM_ADDRESS &&
-      key === (await devFeedPda())
+      key === (await devFeedPda(asset))
     )
   )
     throw Error("FeedInvalid");
@@ -47,7 +43,7 @@ export async function parseFeed(
     d[176] !== 248
   )
     throw Error("FeedInvalid");
-  if (getAddressDecoder().decode(d.subarray(8, 40)) !== SOL)
+  if (getAddressDecoder().decode(d.subarray(8, 40)) !== mintOf(asset))
     throw Error("FeedAssetMismatch");
   const price = d.readBigUInt64LE(168);
   if (price === 0n) throw Error("FeedInvalid");

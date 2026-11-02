@@ -24,7 +24,7 @@ async function fixture(hours: readonly bigint[] = [], t0 = T) {
   const chain={ configKey:h.config, config:s.getConfigDecoder().decode(accountData(h.svm,h.config)), candles:new Map(), tickets:new Map(), now:()=>now } as unknown as Chain;
   const budget=new CreationBudget({call:vi.fn()} as any,h.marker.address,50000000n,0n); budget.ready=true;
   const sent:Prepared[]=[], logs:any[]=[], ixs=new Map<string,readonly Instruction[]>();
-  const rpc={call:vi.fn(async()=>1905000)} as any;
+  const rpc={cluster:'mainnet',call:vi.fn(async()=>1905000)} as any;
   const prepare=await createPrepare(rpc,h.marker,chain,{register:(key,list)=>{ixs.set(key,list);}},()=>({blockhash:'11111111111111111111111111111111',lastValidBlockHeight:100n}));
   const port:EnginePort={blockhash:()=> '11111111111111111111111111111111',price:()=>10000n,prepare,send:p=>{sent.push(p);},cancel:vi.fn()};
   const engine=new Engine(chain,h.marker.address,port,budget,e=>logs.push(e),hours);

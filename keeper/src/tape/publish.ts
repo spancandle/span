@@ -1,3 +1,6 @@
+import { ASSETS,assetOf,nameOf,feedOf,type Asset } from "../../../program/client/assets.js";
+import { ORACLE_FEEDS } from "./doves.js";
+const DEV_FEEDS=await Promise.all(([0,1,2] as const).map(a=>feedOf(a,ORACLE_FEEDS[0],'devnet')));
 import { SPAN_PROGRAM_ADDRESS, settleAfter } from "../../../program/client/index.js";
 import type { Store } from "../common/sqlite.js";
 import type { Chain } from "../keeper/chain.js";
@@ -51,26 +54,29 @@ export class Publisher {
     this.recorder.prune(now);
     this.prunedBefore = Math.max(this.prunedBefore, now - RETAIN);
   }
-  values(a: number, b: number) {
+  private outputFeed(asset: Asset) {
+    return asset===0?this.chain.config!.feed:this.chain.rpc.cluster==='devnet'?DEV_FEEDS[asset]:ORACLE_FEEDS[asset];
+  }
+  values(a: number, b: number, feed: string=ORACLE_FEEDS[0]) {
     return this.store.db
       .prepare(
-        "SELECT * FROM doves WHERE publish_ts>=? AND publish_ts<=? ORDER BY slot,publish_ts",
+        "SELECT * FROM doves WHERE feed=? AND publish_ts>=? AND publish_ts<=? ORDER BY slot,publish_ts",
       )
-      .all(a, b) as any[];
+      .all(feed, a, b) as any[];
   }
-  gaps() {
+  gaps(feed: string=ORACLE_FEEDS[0]) {
     return this.store.db
-      .prepare("SELECT a,b,reason FROM gaps ORDER BY a")
-      .all() as { a: number; b: number | null; reason: string }[];
+      .prepare("SELECT a,b,reason FROM gaps WHERE feed=? ORDER BY a")
+      .all(feed) as { a: number; b: number | null; reason: string }[];
   }
-  doves(a: number, b: number) {
+  doves(a: number, b: number, feed: string=ORACLE_FEEDS[0]) {
     const coverage = this.store.db
-      .prepare("SELECT 1 FROM coverage WHERE start_ts<=? AND end_ts>=?")
-      .get(b, a);
+      .prepare("SELECT 1 FROM coverage WHERE feed=? AND start_ts<=? AND end_ts>=?")
+      .get(feed, b, a);
     if (!coverage) return null;
-    const rows = this.values(a, b),
+    const rows = this.values(a, b, feed),
       prices = rows.map((x) => BigInt(x.price));
-    const missing = this.gaps().some(
+    const missing = this.gaps(feed).some(
       (x) => x.a < b && (x.b === null || x.b > a),
     );
     return {
@@ -86,6 +92,7 @@ export class Publisher {
   feedDocument() {
     const now = Number(this.chain.now()),
       open = [...this.chain.candles.values()]
+        .filter(x=>assetOf(x.value.t0)===0)
         .map((x) => Number(x.value.t0))
         .filter((t) => t <= now && now < t + 3600),
       from = open.length ? Math.min(...open) : now,
@@ -105,6 +112,12 @@ export class Publisher {
           b: g.b === null ? null : String(g.b),
           reason: g.reason,
         })),
+      assets: Object.fromEntries(([1,2] as const).flatMap(asset=>{
+        const times=[...this.chain.candles.values()].filter(x=>assetOf(x.value.t0)===asset).map(x=>Number(x.value.t0)).filter(t=>t<=now&&now<t+3600);
+        if(!times.length)return [];
+        const from=Math.min(...times),rows=this.values(from,now,ORACLE_FEEDS[asset]);
+        return [[ASSETS[asset],{feed:this.outputFeed(asset),from:String(from),ts:delta(rows.map(x=>x.publish_ts-from)),p:delta(rows.map(x=>x.price)),slots:delta(rows.map(x=>x.slot))}]];
+      })),
       candles: open.map((t0) => {
         const rows = this.values(t0, Math.min(now, t0 + 3600)),
           last = rows.at(-1),
@@ -127,7 +140,7 @@ export class Publisher {
       ),
       now = this.chain.now();
     return [...this.chain.candles.values()]
-      .filter(({ value: c }) => hours.has(c.t0) && now >= settleAfter(c))
+      .filter(({ value: c }) => (hours.has(c.t0)||hours.has(c.t0-BigInt(assetOf(c.t0)))) && now >= settleAfter(c))
       .map(({ value: c }) => String(c.t0)).sort();
   }
   /** The listed hours with their reasons, then the reasons sellers wrote in the transactions that opened candles. */
@@ -157,15 +170,15 @@ export class Publisher {
       })),
       ...sellers,
     ].sort((a, b) => (BigInt(a.t0) < BigInt(b.t0) ? -1 : 1));
-    return { v: 1, generated: Date.now(), hours: rows };
+    return { v: 1, generated: Date.now(), hours: rows.map(h=>({...h,asset:nameOf(assetOf(BigInt(h.t0)))})) };
   }
   historyDocument() {
     const receipts = this.history
         .events("Settled")
         .reverse()
         .slice(0, 500)
-        .map((x) => ({ ...x, markLog: markLog(this.history, x.ticket) })),
-      withdrawals = this.history.events("Withdrawn").reverse().slice(0, 500),
+        .map((x) => ({ ...x, asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
+      withdrawals = this.history.events("Withdrawn").reverse().slice(0, 500).map(x=>({...x,asset:nameOf(assetOf(BigInt(x.t0)))})),
       ts = [...new Set([...receipts.map((x) => x.t0), ...this.closedReleaseHours()])]
         .sort((a, b) => (BigInt(a) > BigInt(b) ? -1 : 1))
         .slice(0, 200);
@@ -199,11 +212,12 @@ export class Publisher {
         // pruned, the record stored while it was whole is the one to keep.
         Number(t0) < Number(this.chain.now()) - 8 * 86400
           ? (archived?.doves ?? null)
-          : (this.doves(Number(t0), Number(t0) + 3600) ??
+          : (this.doves(Number(t0), Number(t0) + 3600, ORACLE_FEEDS[assetOf(BigInt(t0))]) ??
             archived?.doves ??
             null);
       const value = {
         t0,
+        asset:nameOf(assetOf(BigInt(t0))),
         reads: c ? candleReads(c, reads) : slots,
         readHigh: c
           ? String(c.readHigh)
@@ -225,12 +239,13 @@ export class Publisher {
     return { v: 1, generated: Date.now(), receipts, withdrawals, candles };
   }
   candlePathBody(t0: number) {
-    const rows = this.values(t0, t0 + 3600),
-      gaps = this.gaps().filter(
+    const asset=assetOf(t0),feed=ORACLE_FEEDS[asset],rows = this.values(t0, t0 + 3600,feed),
+      gaps = this.gaps(feed).filter(
         (g) => g.a < t0 + 3600 && (g.b === null || g.b > t0),
       );
     return {
-      feed: this.chain.config!.feed,
+      feed: this.outputFeed(asset),
+      asset: nameOf(asset),
       t0: String(t0),
       from: String(t0),
       ts: delta(rows.map((x) => x.publish_ts - t0)),
@@ -252,14 +267,15 @@ export class Publisher {
       .prepare("SELECT raw FROM candle_path WHERE t0=?")
       .get(t0) as { raw: string } | undefined;
     let raw = stored?.raw;
+    if(raw){const value=JSON.parse(raw);if(value.asset===undefined){value.asset=nameOf(assetOf(t));raw=json(value);this.store.db.prepare('UPDATE candle_path SET raw=? WHERE t0=?').run(raw,t0);}}
     if (t >= now - RETAIN && t >= this.prunedBefore) {
       if (
         !this.chain.config ||
         !this.store.db
           .prepare(
-            "SELECT 1 FROM doves WHERE publish_ts>=? AND publish_ts<=? LIMIT 1",
+            "SELECT 1 FROM doves WHERE feed=? AND publish_ts>=? AND publish_ts<=? LIMIT 1",
           )
-          .get(t, t + 3600)
+          .get(ORACLE_FEEDS[assetOf(t)],t, t + 3600)
       )
         return false;
       const body = this.candlePathBody(t),

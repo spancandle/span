@@ -1,3 +1,4 @@
+import { ASSETS, assetOf, feedOf, type Asset } from "../../../program/client/assets.js";
 import { resolve } from "node:path";
 import { address, unwrapOption, type Address, type TransactionSigner } from "@solana/kit";
 import * as s from "../../../program/client/index.js";
@@ -57,7 +58,7 @@ export async function createPrepare(
     const accounts = {
       config,
       candle,
-      feed: chain.config.feed,
+      feed: await feedOf(assetOf(a.t0),chain.config.feed,rpc.cluster),
       eventAuthority,
       program: s.SPAN_PROGRAM_ADDRESS,
     };
@@ -76,7 +77,16 @@ export async function createPrepare(
     return prepareTransaction([ix], payer, hash, a, fee);
   };
 }
-export async function runKeeper() {
+export function keeperAssets(value=process.env.KEEPER_ASSETS??'SOL'): Asset[] {
+  const names=value.split(',').map(s=>s.trim());
+  if(!names.length||names.some(n=>!ASSETS.includes(n as any)))throw Error('Invalid KEEPER_ASSETS');
+  return [...new Set(names.map(n=>ASSETS.indexOf(n as any) as Asset))];
+}
+export const releaseStarts=(hours:readonly bigint[],assets:readonly Asset[])=>hours.flatMap(t0=>assets.map(a=>t0+BigInt(a)));
+export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {}) {
+  let assets: Asset[];
+  try { assets=keeperAssets(); }catch(error){log({event:'invalid-assets'});throw error;}
+  log({event:'assets',assets:assets.map(a=>ASSETS[a])});
   const c = cluster();
   if (c === "mainnet" && process.env.KEEPER_ALLOW_MAINNET !== "1")
     throw Error("Mainnet keeper is disabled");
@@ -112,7 +122,7 @@ export async function runKeeper() {
     () => chain.now(),
   );
   const prepare = await createPrepare(rpc, payer, chain, priorities, () => latest);
-  const releases = process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : [];
+  const releases = releaseStarts(options.releaseHours ?? (process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : []),assets);
   const engine = new Engine(
     chain,
     payer.address,

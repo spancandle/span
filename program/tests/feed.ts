@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { getBase58Encoder, getAddressEncoder, getProgramDerivedAddress, address, AccountRole, type TransactionSigner, type Instruction } from "@solana/kit";
 import { SPAN_PROGRAM_ADDRESS } from "../client/index.js";
-import { LOADER } from "../client/constants.js";
+import { feedOf, type Asset } from "../client/assets.js";
+import { SOL_FEED, LOADER } from "../client/constants.js";
 import type { EventInstruction } from "../client/events.js";
 export function decodeDevFeedEvents(instructions: readonly EventInstruction[]) {
   const prefix = Buffer.from([228, 69, 165, 46, 81, 203, 154, 29]);
@@ -47,24 +48,20 @@ export const eventAccounts = async () => ({
   )[0],
   program: SPAN_PROGRAM_ADDRESS,
 });
-export const feedPda = async () =>
-  (
-    await getProgramDerivedAddress({
-      programAddress: SPAN_PROGRAM_ADDRESS,
-      seeds: ["dev_feed"],
-    })
-  )[0];
+export const feedPda = (asset: Asset = 0) => feedOf(asset, SOL_FEED, 'devnet');
 
 export async function devFeedInstruction(
   name: "dev_feed_init" | "dev_feed_write",
   authority: TransactionSigner,
   price?: bigint,
   publishTs?: bigint,
+  asset: Asset = 0,
 ): Promise<Instruction> {
-  const bytes = Buffer.alloc(name === "dev_feed_init" ? 8 : 24);
+  const bytes = Buffer.alloc(name === "dev_feed_init" ? 9 : 25);
   createHash("sha256").update(`global:${name}`).digest().copy(bytes, 0, 0, 8);
-  if (price !== undefined) bytes.writeBigUInt64LE(price, 8);
-  if (publishTs !== undefined) bytes.writeBigInt64LE(publishTs, 16);
+  bytes[8] = asset;
+  if (name === "dev_feed_write" && price !== undefined) bytes.writeBigUInt64LE(price, 9);
+  if (name === "dev_feed_write" && publishTs !== undefined) bytes.writeBigInt64LE(publishTs, 17);
   const authorityAccount = {
     address: authority.address,
     role: AccountRole.WRITABLE_SIGNER,
@@ -78,7 +75,7 @@ export async function devFeedInstruction(
       authorityAccount,
       { address: SPAN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
       { address: await programData(), role: AccountRole.READONLY },
-      { address: await feedPda(), role: AccountRole.WRITABLE },
+      { address: await feedPda(asset), role: AccountRole.WRITABLE },
       ...(name === "dev_feed_init"
         ? [
             {

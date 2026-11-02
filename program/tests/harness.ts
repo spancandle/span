@@ -38,6 +38,8 @@ import {
   DOVES,
 } from "../client/constants.js";
 import { decodeEvents } from "../client/events.js";
+import { mintOf, type Asset } from "../client/assets.js";
+import { ETH_FEED } from "../client/constants.js";
 import { verifyEvents } from "./event-proof.js";
 import {
   findConfigPda,
@@ -76,6 +78,8 @@ export const measurements: Record<string, string[]> = {};
 export const sizes: Record<string, number> = {};
 export const rents: Record<string, { bytes: number; lamports: string }> = {};
 export class Harness {
+  asset: Asset = 0;
+  feed: Address = SOL_FEED;
   svm = new LiteSVM().withTransactionHistory(0n);
   admin!: Wallet;
   seller!: Wallet;
@@ -99,6 +103,7 @@ export class Harness {
       spanProgram?: Address;
       setSpan?: boolean;
       binary?: string;
+      asset?: Asset;
     } = {},
   ) {
     const h = new Harness();
@@ -158,6 +163,9 @@ export class Harness {
         space: BigInt(data.length),
       });
     }
+    h.asset = o.asset ?? 0;
+    h.feed = [SOL_FEED, BTC_FEED, ETH_FEED][h.asset];
+    if (h.asset !== 0) h.clone(SOL_FEED, h.feed, data => data.set(getAddressEncoder().encode(mintOf(h.asset)), 8));
     h.clock(1000n);
     h.price(8_246_000_000n, 1000n);
     h.sellerUsdc = await h.fundToken(h.seller, USDC, TOKEN, 1_000_000_000_000n);
@@ -200,7 +208,7 @@ export class Harness {
     c.slot = slot;
     this.svm.setClock(c);
   }
-  price(price: bigint, publishTs: bigint, feed: Address = SOL_FEED) {
+  price(price: bigint, publishTs: bigint, feed: Address = this.feed) {
     const a = this.svm.getAccount(feed);
     if (!a.exists) throw Error("Missing feed");
     const d = Buffer.from(a.data);
@@ -223,7 +231,7 @@ export class Harness {
     return fn({
       config: this.config,
       usdcMint: USDC,
-      feed: SOL_FEED,
+      feed: name === "read" || name === "mark" ? this.feed : SOL_FEED,
       tokenProgram: TOKEN,
       spanTokenProgram: this.spanProgram,
       spanMint: this.spanMint,
@@ -244,7 +252,7 @@ export class Harness {
   ticketState(t: Ref) {
     return r.getTicketDecoder().decode(accountData(this.svm, t.ticket));
   }
-  async ref(t0 = 1200n, id = this.configState().nextTicketId): Promise<Ref> {
+  async ref(t0 = 1200n + BigInt(this.asset), id = this.configState().nextTicketId): Promise<Ref> {
     const ticket = (await findTicketPda(id))[0];
     return {
       id,

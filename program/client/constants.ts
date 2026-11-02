@@ -11,6 +11,9 @@ export const DOVES = address("DoVEsk76QybCEHQGzkvYPWLQu9gzNoZZZt3TPiL597e");
 export const SOL = address("So11111111111111111111111111111111111111112");
 export const SOL_FEED = address("FYq2BWQ1V5P1WFBqr3qB2Kb5yHVvSv7upzKodgQE5zXh");
 export const BTC_FEED = address("hUqAT1KQ7eW1i6Csp9CXYtpPfSAvi835V7wKi5fRfmC");
+export const ETH_FEED = address("AFZnHPzy4mvVCffrVwhewHbFc93uTHvDSFrVH7GtfXF1");
+export const BTC_MINT = address("3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh");
+export const ETH_MINT = address("7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs");
 export const USDC = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 
 export const VAULT_CAP = 40_000_000n;

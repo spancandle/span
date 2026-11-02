@@ -7,7 +7,8 @@ import { Subscriptions } from "../common/ws.js";
 import { Store } from "../common/sqlite.js";
 import { Chain } from "../keeper/chain.js";
 import { History } from "./history.js";
-import { DovesRecorder } from "./doves.js";
+import { ASSETS } from "../../../program/client/assets.js";
+import { DovesRecorder, ORACLE_FEEDS } from "./doves.js";
 import { Publisher } from "./publish.js";
 import { SpanDecimals } from "./state.js";
 import { ChainReader } from "./chain.js";
@@ -29,18 +30,18 @@ export async function runTape() {
   const history = new History(
     store,
     rpc,
-    (sig, v, slot) => {
+    (sig, v, slot, feed=ORACLE_FEEDS[0]) => {
       const ts = Number(v.publishTs);
       if (
         store.db
-          .prepare("SELECT 1 FROM coverage WHERE start_ts<=? AND end_ts>=?")
-          .get(ts, ts)
+          .prepare("SELECT 1 FROM coverage WHERE feed=? AND start_ts<=? AND end_ts>=?")
+          .get(feed, ts, ts)
       ) {
-        recorder.sample(sig, v.price, v.publishTs, slot);
+        recorder.sample(sig, v.price, v.publishTs, slot, feed);
       }
     },
     () => {
-      if (recorder.recording) recorder.gap("program-history");
+      for(const feed of ORACLE_FEEDS)if(recorder.states.get(feed)?.recording)recorder.gap("program-history",feed);
     },
   );
   history.refillReasons();
@@ -90,11 +91,12 @@ export async function runTape() {
 
   const record = () => {
     const now = Number(chain.now());
-    if (chain.recording()) {
-      recorder.startRecording(now);
-      recorder.cover(now);
-      guarded("doves-read-error", () => recorder.poll(now));
-    } else recorder.stopRecording();
+    for(const asset of [0,1,2] as const){
+      const feed=ORACLE_FEEDS[asset];
+      if(chain.recording(asset)){recorder.startRecording(now,feed);recorder.cover(now,feed);}
+      else recorder.stopRecording(feed);
+    }
+    guarded('doves-read-error',()=>recorder.poll(now));
   };
   record();
   await decimals
@@ -109,8 +111,7 @@ export async function runTape() {
     setInterval(() => {
       guarded("history-read-error", async () => {
         await history.poll();
-        if (recorder.recording && rpc.cluster === "devnet")
-          recorder.closeGaps();
+        if(rpc.cluster === "devnet")for(const feed of ORACLE_FEEDS)if(recorder.states.get(feed)?.recording)recorder.closeGaps(feed);
       });
     }, 2000),
     setInterval(() => {

@@ -73,6 +73,7 @@ pub mod span {
             &ctx.accounts.feed.to_account_info(),
             Clock::get()?.unix_timestamp,
             age_limit,
+            0,
         )?;
         ctx.accounts.config.set_inner(Config {
             admin,
@@ -126,6 +127,7 @@ pub mod span {
             &ctx.accounts.feed.to_account_info(),
             Clock::get()?.unix_timestamp,
             ctx.accounts.config.age_limit,
+            0,
         )?;
         let old_feed = ctx.accounts.config.feed;
         let new_feed = ctx.accounts.feed.key();
@@ -157,7 +159,7 @@ pub mod span {
         if ctx.accounts.candle.t0 != 0 {
             return Ok(());
         }
-        require!(t0 % 60 == 0, SpanError::InvalidValue);
+        require!(t0.rem_euclid(60) < i64::from(oracle::ASSETS), SpanError::InvalidValue);
         require!(
             Clock::get()?.unix_timestamp
                 < t0.checked_sub(i64::from(ctx.accounts.config.buy_cutoff))
@@ -403,13 +405,14 @@ pub mod span {
         require!(clock.unix_timestamp >= boundary, SpanError::BeforeBoundary);
         require_keys_eq!(
             ctx.accounts.feed.key(),
-            ctx.accounts.config.feed,
+            oracle::feed_of(ctx.accounts.config.feed, candle.t0.rem_euclid(60) as u8)?,
             SpanError::FeedNotConfig
         );
         let price = oracle::read(
             &ctx.accounts.feed.to_account_info(),
             clock.unix_timestamp,
             candle.age_limit,
+            candle.t0.rem_euclid(60) as u8,
         )?;
         require!(
             price.publish_ts >= boundary
@@ -454,7 +457,7 @@ pub mod span {
         require!(p0 > 0, SpanError::NoOpen);
         require_keys_eq!(
             ctx.accounts.feed.key(),
-            ctx.accounts.gate.config.feed,
+            oracle::feed_of(ctx.accounts.gate.config.feed, candle.t0.rem_euclid(60) as u8)?,
             SpanError::FeedNotConfig
         );
         let clock = Clock::get()?;
@@ -462,6 +465,7 @@ pub mod span {
             &ctx.accounts.feed.to_account_info(),
             clock.unix_timestamp,
             candle.age_limit,
+            candle.t0.rem_euclid(60) as u8,
         )?;
         require!(
             price.publish_ts > candle.t0 && price.publish_ts <= math::add_time(candle.t0, 3600)?,
@@ -747,11 +751,12 @@ pub mod span {
     }
 
     #[cfg(feature = "devnet")]
-    pub fn dev_feed_init(ctx: Context<DevFeedInit>) -> Result<()> {
+    pub fn dev_feed_init(ctx: Context<DevFeedInit>, asset: u8) -> Result<()> {
+        require!(asset < oracle::ASSETS, SpanError::InvalidValue);
         let now = Clock::get()?.unix_timestamp;
         let mut d = ctx.accounts.feed.try_borrow_mut_data()?;
         d[..8].copy_from_slice(&oracle::DISC);
-        d[8..40].copy_from_slice(oracle::SOL.as_ref());
+        d[8..40].copy_from_slice(oracle::mint_of(asset)?.as_ref());
         d[168..176].copy_from_slice(&1u64.to_le_bytes());
         d[176] = 248;
         d[177..185].copy_from_slice(&now.to_le_bytes());
@@ -764,7 +769,8 @@ pub mod span {
     }
 
     #[cfg(feature = "devnet")]
-    pub fn dev_feed_write(ctx: Context<DevFeedWrite>, price: u64, publish_ts: i64) -> Result<()> {
+    pub fn dev_feed_write(ctx: Context<DevFeedWrite>, asset: u8, price: u64, publish_ts: i64) -> Result<()> {
+        require!(asset < oracle::ASSETS, SpanError::InvalidValue);
         require!(price > 0, SpanError::InvalidValue);
         let mut d = ctx.accounts.feed.try_borrow_mut_data()?;
         d[168..176].copy_from_slice(&price.to_le_bytes());

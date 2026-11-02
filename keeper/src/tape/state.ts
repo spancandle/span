@@ -1,3 +1,4 @@
+import { assetOf,nameOf } from "../../../program/client/assets.js";
 import { SPAN_PROGRAM_ADDRESS } from "../../../program/client/index.js";
 import { unwrapOption } from "@solana/kit";
 import {
@@ -134,6 +135,7 @@ export function liveDocuments(
             offers = open.filter(([, t], i) => open.findIndex(([, x]) => x.value.strikeBps === t.value.strikeBps) === i).sort((a,b) => a[1].value.strikeBps-b[1].value.strikeBps);
           return {
             address,
+            asset: nameOf(assetOf(c.t0)),
             t0: String(c.t0),
             readWindow: c.readWindow,
             ageLimit: c.ageLimit,
@@ -155,6 +157,7 @@ export function liveDocuments(
       generated: Date.now(),
       tickets: tickets.map(([address, { value: t }]) => ({
         address,
+        asset: nameOf(assetOf(t.t0)),
         id: String(t.id),
         t0: String(t.t0),
         seller: t.seller,

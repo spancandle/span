@@ -7,6 +7,7 @@ import {
   type Candle,
   type Ticket,
 } from "../../../program/client/index.js";
+import { assetOf } from "../../../program/client/assets.js";
 import { spanHeld, type Chain } from "./chain.js";
 import type { FeedValue } from "../common/feed.js";
 import type { Action, Prepared } from "./sender.js";
@@ -41,7 +42,7 @@ export class Engine {
     readonly chain: Pick<
       Chain,
       "candles" | "tickets" | "config" | "feed" | "now"
-    > & Partial<Pick<Chain, "spanHolds" | "spanRead">>,
+    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds">>,
     readonly keeper: Address,
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
@@ -54,6 +55,11 @@ export class Engine {
     for (const t0 of this.releaseHours)
       if (!next.has(t0)) this.complete(`open:${t0}`);
     this.releaseHours = next;
+  }
+  private feed(t0: bigint) {
+    if(!this.chain.feeds?.size&&!this.chain.feed)return undefined;
+    const asset=assetOf(t0);
+    return this.chain.feeds?.get(asset) ?? (asset===0?this.chain.feed:undefined);
   }
   private canOpen(t0: bigint) {
     const now = this.chain.now();
@@ -83,6 +89,7 @@ export class Engine {
       if (!this.releaseHours.has(c.t0) &&
           ![...this.chain.tickets.values()].some((x) => x.value.t0 === c.t0))
         continue;
+      const feed = this.feed(c.t0);
       for (let j = 0; j < 13; j++) {
         const k = `read:${key}:${j}`,
           b = boundary(c.t0, j);
@@ -105,8 +112,8 @@ export class Engine {
         if (j > 0 && c.reads[0].price === 0n) continue;
         if (this.abandoned.has(k)) continue;
         if (
-          (this.chain.feed &&
-            this.chain.feed.publishTs > b + BigInt(c.readWindow)) ||
+          (feed &&
+            feed.publishTs > b + BigInt(c.readWindow)) ||
           now > b + BigInt(c.readWindow + c.ageLimit + 2)
         ) {
           this.abandoned.add(k);
@@ -233,7 +240,7 @@ export class Engine {
   private eligible(a: Action) {
     if (a.kind === "open") return this.canOpen(a.t0) && !this.abandoned.has(a.key);
     const c = this.candle(a),
-      v = this.chain.feed;
+      v = this.feed(a.t0);
     if (a.kind === "settle") return this.chain.now() >= settleAfter(c);
     if (!v) return false;
     if (a.kind === "read")
@@ -255,10 +262,9 @@ export class Engine {
   update() {
     if (this.closed) return;
     const actions = this.actions();
-    const v = this.chain.feed;
-    if (v)
-      for (const a of actions) {
-        if (a.kind !== "mark") continue;
+    for (const a of actions) {
+        const v=this.feed(a.t0);
+        if (a.kind !== "mark" || !v) continue;
         const t = this.chain.tickets.get(a.ticket as Address)!.value,
           c = this.candle(a);
         if (
@@ -286,9 +292,9 @@ export class Engine {
         }
       }
     for (const a of actions) {
-      if (a.kind === "read" && this.chain.feed) {
+      const v=this.feed(a.t0);
+      if (a.kind === "read" && v) {
         const b = boundary(a.t0, a.j!),
-          v = this.chain.feed,
           c = this.candle(a);
         if (v.publishTs >= b && v.publishTs <= b + BigInt(c.readWindow)) {
           const rows = this.seen.get(a.key) ?? [];
@@ -320,13 +326,13 @@ export class Engine {
       this.pending.set(a.key, p);
       this.prepared.delete(a.key);
       this.maximum.set(`${a.key}:${p.blockhash}`, p.price);
-      if (a.kind === "mark" && this.chain.feed)
+      if (a.kind === "mark" && v)
         this.marked.set(
           a.key,
-          `${this.chain.feed.publishTs}:${this.chain.feed.price}`,
+          `${v.publishTs}:${v.price}`,
         );
       if (a.kind === "open") this.opening.add(a.key);
-      this.port.send(p, this.chain.feed);
+      this.port.send(p, v);
     }
   }
   warm(a: Action) {

@@ -150,6 +150,7 @@ it("K1 writes a receipt candle path once its recording window ends; values equal
     "v",
     "generated",
     "feed",
+    "asset",
     "t0",
     "from",
     "ts",

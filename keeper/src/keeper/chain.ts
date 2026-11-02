@@ -10,6 +10,7 @@ import {
 } from "@solana/kit";
 import { findAssociatedTokenPda, getTokenDecoder, AccountState } from "@solana-program/token";
 import * as s from "../../../program/client/index.js";
+import { ASSETS, assetOf, feedOf, type Asset } from "../../../program/client/assets.js";
 import { TOKEN, TOKEN_2022 } from "../../../program/client/constants.js";
 import { getTokenSize } from "@solana-program/token-2022";
 import { RpcPool, type Mode } from "../common/rpc.js";
@@ -55,7 +56,9 @@ export class Chain {
   configKey!: Address;
   candles = new Map<Address, Live<s.Candle>>();
   tickets = new Map<Address, Live<s.Ticket>>();
-  feed?: FeedValue;
+  feeds = new Map<Asset, FeedValue>();
+  get feed() { return this.feeds.get(0); }
+  set feed(value: FeedValue | undefined) { if(value)this.feeds.set(0,value);else this.feeds.delete(0); }
   spanHolds = new Map<Address, SpanHoldRead>();
   // Assigned before the RPC starts, so an earlier in-flight read cannot clear a later shortfall.
   spanRead = 0;
@@ -67,9 +70,10 @@ export class Chain {
   private anchorTime = 0;
   private slotMs = 400;
   private slotAt = 0;
-  private feedKey?: Address;
-  private feedStop?: () => void;
-  private lastFeed = "";
+  private feedKeys = new Map<Asset,Address>();
+  private feedStops = new Map<Asset,()=>void>();
+  private lastFeed = new Map<Asset,string>();
+  private feedSync?: Promise<void>;
   private timers: ReturnType<typeof setInterval>[] = [];
   private stops: (() => void)[] = [];
   private busy = new Set<string>();
@@ -96,10 +100,10 @@ export class Chain {
       ({ value: c }) => now >= c.t0 - 30n && now <= s.settleAfter(c) + 60n,
     );
   }
-  recording() {
+  recording(asset?: Asset) {
     const now = this.now();
     return [...this.candles.values()].some(
-      ({ value: c }) => now >= c.t0 - 120n && now <= c.t0 + 3720n,
+      ({ value: c }) => (asset === undefined || assetOf(c.t0) === asset) && now >= c.t0 - 120n && now <= c.t0 + 3720n,
     );
   }
   setSlot(slot: number) {
@@ -146,39 +150,50 @@ export class Chain {
     map.set(key, { value, slot, data: raw.data[0] });
     this.onChange();
   }
-  async ingestFeed(raw: any, slot: number, source: "ws" | "poll") {
+  async ingestFeed(raw: any, slot: number, source: "ws" | "poll", asset: Asset = 0) {
     if (!this.config) return;
-    const key = this.config.feed,
-      v = await parseFeed(raw, key, this.rpc.cluster);
-    if (this.config.feed !== key) return;
+    const configFeed = this.config.feed, key = await feedOf(asset, configFeed, this.rpc.cluster),
+      v = await parseFeed(raw, key, this.rpc.cluster, asset);
+    if (this.config?.feed !== configFeed) return;
     const id = `${v.publishTs}:${v.price}`;
-    if (id === this.lastFeed) return;
-    if (this.feed && slot < this.feed.slot) return;
-    this.lastFeed = id;
-    this.feed = { ...v, slot, source, recvMs: Date.now() };
-    this.logger({ event: "feed", ...this.feed });
-    this.onFeed(this.feed);
+    if (id === this.lastFeed.get(asset)) return;
+    const old = this.feeds.get(asset);
+    if (old && slot < old.slot) return;
+    this.lastFeed.set(asset,id);
+    const value = { ...v, slot, source, recvMs: Date.now() };
+    this.feeds.set(asset,value);
+    this.logger({ event: "feed", asset: ASSETS[asset], ...value });
+    this.onFeed(value);
+  }
+  private assets(): Asset[] {
+    return [...new Set<Asset>([0,...[...this.candles.values()].map(x=>assetOf(x.value.t0))])];
+  }
+  private async syncFeeds() {
+    if(this.feedSync)return this.feedSync;
+    this.feedSync=(async()=>{
+      const configFeed=this.config?.feed;if(!configFeed)return;
+      for(const asset of this.assets()){
+        const key=await feedOf(asset,configFeed,this.rpc.cluster);
+        if(this.config?.feed!==configFeed)return;
+        if(this.feedKeys.get(asset)===key)continue;
+        this.feedStops.get(asset)?.();this.feedKeys.set(asset,key);this.lastFeed.delete(asset);this.feeds.delete(asset);
+        this.feedStops.set(asset,this.ws.subscribe('accountSubscribe',[key,{encoding:'base64',commitment:'processed'}],v=>{
+          if(this.feedKeys.get(asset)!==key)return;
+          void this.ingestFeed(v.value,v.context.slot,'ws',asset).catch(()=>this.logger({event:'invalid-feed',asset:ASSETS[asset]}));
+        }));
+      }
+      for(const asset of this.feedKeys.keys())if(!this.assets().includes(asset)){
+        this.feedStops.get(asset)?.();this.feedStops.delete(asset);this.feedKeys.delete(asset);this.feeds.delete(asset);this.lastFeed.delete(asset);
+      }
+    })().finally(()=>{this.feedSync=undefined;});
+    return this.feedSync;
   }
   ingestConfig(raw: any) {
-    if (raw?.owner !== s.SPAN_PROGRAM_ADDRESS)
-      throw Error("Config owner mismatch");
-    this.config = s.getConfigDecoder().decode(bytes(raw));
-    if (this.feedKey !== this.config.feed) {
-      this.feedStop?.();
-      this.feedKey = this.config.feed;
-      this.lastFeed = "";
-      this.feed = undefined;
-      this.feedStop = this.ws.subscribe(
-        "accountSubscribe",
-        [this.feedKey, { encoding: "base64", commitment: "processed" }],
-        (v) => {
-          void this.ingestFeed(v.value, v.context.slot, "ws").catch(() =>
-            this.logger({ event: "invalid-feed" }),
-          );
-        },
-      );
-    }
-    this.onChange();
+    if (raw?.owner !== s.SPAN_PROGRAM_ADDRESS) throw Error('Config owner mismatch');
+    const value=s.getConfigDecoder().decode(bytes(raw));
+    if(this.config?.feed!==value.feed){this.feedStops.get(0)?.();this.feedStops.delete(0);this.feedKeys.delete(0);this.feeds.delete(0);this.lastFeed.delete(0);}
+    this.config=value;
+    void this.syncFeeds().catch(()=>this.logger({event:'feed-subscription-error'}));this.onChange();
   }
   async pollPrograms() {
     await Promise.all(
@@ -208,6 +223,7 @@ export class Chain {
         this.setSlot(v.context.slot);
       }),
     );
+    await this.syncFeeds();
     this.lastReadMs = Date.now();
   }
   async pollSpanHolds(role: "keeper" | "tape") {
@@ -284,6 +300,7 @@ export class Chain {
   }
   async pollConfig() {
     this.ingestConfig(await account(this.rpc, this.configKey));
+    await this.syncFeeds();
     this.lastReadMs = Date.now();
   }
   async pollClock() {
@@ -294,16 +311,13 @@ export class Chain {
     this.setSlot(this.anchorSlot);
   }
   async pollFeed() {
-    if (this.config) {
-      const v = await this.rpc.call(
-        "getAccountInfo",
-        [this.config.feed, { encoding: "base64", commitment: "processed" }],
-        "normal",
-        "overlay-feed",
-      );
-      await this.ingestFeed(v.value, v.context.slot, "poll");
-      this.setSlot(v.context.slot);
-    }
+    if(!this.config)return;
+    await this.syncFeeds();
+    await Promise.all(this.assets().map(async asset=>{
+      const key=await feedOf(asset,this.config!.feed,this.rpc.cluster);
+      const v=await this.rpc.call('getAccountInfo',[key,{encoding:'base64',commitment:'processed'}],'normal',`overlay-feed:${asset}`);
+      await this.ingestFeed(v.value,v.context.slot,'poll',asset);this.setSlot(v.context.slot);
+    }));
   }
   async full() {
     await Promise.all([
@@ -404,7 +418,7 @@ export class Chain {
   close() {
     this.timers.forEach(clearInterval);
     this.stops.forEach((f) => f());
-    this.feedStop?.();
+    for(const stop of this.feedStops.values())stop();
     this.ws.close();
   }
 }

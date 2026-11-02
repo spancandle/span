@@ -178,7 +178,7 @@ async function keeper(t0 = L) {
   const chain = { configKey: h.config, config: s.getConfigDecoder().decode(accountData(h.svm, h.config)), candles: new Map(), tickets: new Map(), now: () => now } as unknown as Chain;
   const budget = new CreationBudget({ call: vi.fn() } as any, h.marker.address, 50000000n, 0n); budget.ready = true;
   const sent: Prepared[] = [], logs: any[] = [], ixs = new Map<string, readonly Instruction[]>();
-  const prepare = await createPrepare({ call: vi.fn(async () => 1905000) } as any, h.marker, chain, { register: (key, list) => { ixs.set(key, list); } },
+  const prepare = await createPrepare({ cluster: "mainnet", call: vi.fn(async () => 1905000) } as any, h.marker, chain, { register: (key, list) => { ixs.set(key, list); } },
     () => ({ blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 100n }));
   const port: EnginePort = { blockhash: () => "11111111111111111111111111111111", price: () => 10000n, prepare, send: (p) => { sent.push(p); }, cancel: vi.fn() };
   const engine = new Engine(chain, h.marker.address, port, budget, (e) => logs.push(e));
@@ -326,8 +326,8 @@ describe("E5 the tape publishes listed hours and sellers' reasons", () => {
     const t0s = doc.hours.map((h: any) => Number(h.t0));
     expect(t0s).toEqual([...t0s].sort((a, b) => a - b));
     expect(doc.hours.filter((h: any) => h.by === "seller")).toHaveLength(500);
-    expect(doc.hours.at(-2)).toEqual({ t0: String(L), name: "Exchange reopens", why: "Withdrawals resume after the halt", source: "https://example.org/notice", by: "list", sig: null });
-    expect(doc.hours.at(-1)).toEqual({ t0: String(L + 60n), name: null, why: "kept", source: null, by: "seller", sig: "SK" });
+    expect(doc.hours.at(-2)).toEqual({ asset: "SOL", t0: String(L), name: "Exchange reopens", why: "Withdrawals resume after the halt", source: "https://example.org/notice", by: "list", sig: null });
+    expect(doc.hours.at(-1)).toEqual({ asset: "SOL", t0: String(L + 60n), name: null, why: "kept", source: null, by: "seller", sig: "SK" });
     expect(doc.hours.some((h: any) => h.sig === "SH" || h.sig === "SL")).toBe(false);
     expect(doc.hours[0].why).toBe("reason 498");
     const before = readFileSync(join(x.dir, "hours.json"), "utf8");

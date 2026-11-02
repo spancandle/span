@@ -12,12 +12,12 @@ it('production polling discovers a changed marker and a first load during the ho
  const h=await Harness.create({setSpan:true}),a=await h.open({loaded:true}),b=await h.open({sold:true});
  h.clock(a.t0);h.price(10000000000n,a.t0);await h.send('opening',h.readIx(a,0));h.clock(a.t0+1830n);
  const raw=(key:Address)=>{const a=h.svm.getAccount(key);return a.exists?{owner:a.programAddress,lamports:Number(a.lamports),data:[Buffer.from(a.data).toString('base64'),'base64']}:null;};
- const rpc={cluster:'devnet',call:vi.fn(async(method:string,params:any[])=>{
+ const rpc={cluster:'mainnet',call:vi.fn(async(method:string,params:any[])=>{
   if(method==='getMultipleAccounts')return{context:{slot:10},value:params[0].map(raw)};
   expect(method).toBe('getProgramAccounts');const candle=params[1].filters[0].memcmp.bytes===getBase58Decoder().decode(s.CANDLE_DISCRIMINATOR);
   return{context:{slot:10},value:(candle?[a.candle]:[a.ticket,b.ticket]).map(pubkey=>({pubkey,account:raw(pubkey)}))};
  })};
- const chain=new Chain(rpc as any,{} as any,()=>{},h.stranger.address);chain.config=h.configState();chain.now=()=>h.svm.getClock().unixTimestamp;
+ const chain=new Chain(rpc as any,{subscribe:()=>()=>{}} as any,()=>{},h.stranger.address);chain.config=h.configState();chain.now=()=>h.svm.getClock().unixTimestamp;
  await chain.pollPrograms();await chain.pollSpanHolds('keeper');
  const sent:Prepared[]=[];const engine=new Engine(chain,h.stranger.address,{blockhash:()=> 'hash',price:()=>1n,
   prepare:async(action,price)=>({action,price,signature:action.key,wire:'',blockhash:'hash',lastValidBlockHeight:100n,rent:0n}),send:p=>sent.push(p),cancel:()=>{}},
@@ -45,7 +45,7 @@ it('history poll decodes MarkerSet and advances its cursor through later Marked 
   s.getSettledEventEncoder().encode({ticket:t.ticket,id:t.id,t0:t.t0,outcome:s.Outcome.Paid,seller:h.seller.address,buyer:h.buyer.address,premium:20000000n,strikeBps:0,p0:10000000000n,readHigh:10000000000n,readLow:10000000000n,tailHigh:10100000000n,tailLow:0n,high:10100000000n,low:10000000000n,payout:10000000n,toBuyer:10000000n,toSeller:30000000n,spanReturned:99900n,burned:100n,marks:1,reads:1}),
  ];
  const txs=encoded.map((data,i)=>({slot:i+1,blockTime:1200+i,transaction:{message:{accountKeys:[s.SPAN_PROGRAM_ADDRESS],instructions:[]}},meta:{err:null,innerInstructions:[{index:0,instructions:[{programIdIndex:0,data:getBase58Decoder().decode(Buffer.concat([prefix,Buffer.from(data)]))}]}]}}));
- const store=new Store(':memory:'),rpc={cluster:'devnet',call:vi.fn(async(method:string,params:any[])=>method==='getSignaturesForAddress'?[2,1,0].map(i=>({signature:String(i),slot:i+1})):txs[Number(params[0])])};
+ const store=new Store(':memory:'),rpc={cluster:'mainnet',call:vi.fn(async(method:string,params:any[])=>method==='getSignaturesForAddress'?[2,1,0].map(i=>({signature:String(i),slot:i+1})):txs[Number(params[0])])};
  try{const history=new History(store,rpc as any,()=>{});await history.poll();
   expect(store.get('program-cursor')).toBe('2');expect(store.get('program-slot')).toBe('3');
   expect(history.events('MarkerSet')[0]).toMatchObject({ticket:t.ticket,buyer:h.buyer.address,oldMarker:h.marker.address,newMarker:h.stranger.address});

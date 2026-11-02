@@ -11,3 +11,5 @@ export * from "./math.js";
 export * from "./oracle.js";
 export * from "./events.js";
 export * from "./settle.js";
+
+export * from "./assets.js";

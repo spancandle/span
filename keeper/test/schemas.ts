@@ -7,6 +7,7 @@ type Schema =
   | "csv"
   | { nullable: Schema }
   | { array: Schema }
+  | { record: Schema }
   | { object: Record<string, Schema> };
 const object = (fields: Record<string, Schema>): Schema => ({ object: fields }),
   array = (item: Schema): Schema => ({ array: item }),
@@ -51,6 +52,7 @@ export const schemas: Record<string, Schema> = {
     candles: array(
       object({
         address: "string",
+        asset: "string",
         t0: "integerString",
         readWindow: "number",
         ageLimit: "number",
@@ -80,6 +82,7 @@ export const schemas: Record<string, Schema> = {
     tickets: array(
       object({
         address: "string",
+        asset: "string",
         id: "integerString",
         t0: "integerString",
         seller: "string",
@@ -100,6 +103,7 @@ export const schemas: Record<string, Schema> = {
     ),
   }),
   feed: object({
+    assets: {record:object({feed:'string',from:'integerString',ts:'csv',p:'csv',slots:'csv'})},
     v: "number",
     generated: "number",
     feed: "string",
@@ -132,6 +136,7 @@ export const schemas: Record<string, Schema> = {
     receipts: array(
       object({
         ticket: "string",
+        asset: "string",
         id: "integerString",
         t0: "integerString",
         outcome: "string",
@@ -162,6 +167,7 @@ export const schemas: Record<string, Schema> = {
     withdrawals: array(
       object({
         ticket: "string",
+        asset: "string",
         id: "integerString",
         t0: "integerString",
         seller: "string",
@@ -174,6 +180,7 @@ export const schemas: Record<string, Schema> = {
     candles: array(
       object({
         t0: "integerString",
+        asset: "string",
         reads: array(read),
         readHigh: "integerString",
         readLow: "integerString",
@@ -193,6 +200,7 @@ export const schemas: Record<string, Schema> = {
     hours: array(
       object({
         t0: "integerString",
+        asset: "string",
         name: nullable("string"),
         why: "string",
         source: nullable("string"),
@@ -270,6 +278,7 @@ function validate(value: any, schema: Schema, path: string) {
     );
     return;
   }
+  if('record' in schema){expect(value,path).toBeTypeOf('object');for(const [key,v]of Object.entries(value))validate(v,schema.record,`${path}.${key}`);return;}
   expect(value, path).toBeTypeOf("object");
   for (const [key, s] of Object.entries(schema.object)) {
     expect(value, path).toHaveProperty(key);

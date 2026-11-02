@@ -1,3 +1,6 @@
+import { ORACLE_FEEDS } from "./doves.js";
+import { feedOf } from "../../../program/client/assets.js";
+const DEV_FEED_KEYS=await Promise.all(([0,1,2] as const).map(a=>feedOf(a,ORACLE_FEEDS[0],'devnet')));
 import { address, getBase58Encoder } from "@solana/kit";
 import * as s from "../../../program/client/index.js";
 import { cleanText } from "../../../program/client/reason.js";
@@ -26,7 +29,14 @@ export function transactionEvents(tx: any) {
         data: ix.data,
       };
       const dev = decodeDevFeedEvents([resolved]);
-      out.push(...(dev.length ? dev : s.decodeEvents([resolved])));
+      if(dev.length){
+        const outer=tx.transaction.message.instructions[group.index];
+        const candidates=(outer?.accounts??[]).map((i:number)=>keys[i]).filter((key:string)=>DEV_FEED_KEYS.includes(key as any));
+        const found=candidates.length?[...new Set(candidates)]:keys.filter(key=>DEV_FEED_KEYS.includes(key as any));
+        if(found.length>1)throw Error('Ambiguous development feed');
+        const asset=DEV_FEED_KEYS.indexOf(found[0] as any);
+        out.push(...dev.map(e=>({...e,feed:asset<0?undefined:ORACLE_FEEDS[asset]})));
+      }else out.push(...s.decodeEvents([resolved]));
     }
   return out;
 }
@@ -81,7 +91,7 @@ export class History {
   constructor(
     readonly store: Store,
     readonly rpc: RpcPool,
-    readonly feedSample: (sig: string, v: any, slot: number) => void,
+    readonly feedSample: (sig: string, v: any, slot: number, feed?: string) => void,
     readonly onGap: () => void = () => {},
   ) {}
   private reason(sig: string, tx: any, events?: { name: string; data: any }[]) {
@@ -118,7 +128,7 @@ export class History {
           .prepare("INSERT OR IGNORE INTO events VALUES(?,?,?,?,?,?)")
           .run(sig, i, event.name, tx.slot, tx.blockTime, json(data));
         if (event.name === "DevFeedUpdated")
-          this.feedSample(sig, event.data, tx.slot);
+          this.feedSample(sig, event.data, tx.slot, event.feed);
       });
       this.store.set("program-cursor", sig);
       this.store.set("program-slot", String(tx.slot));

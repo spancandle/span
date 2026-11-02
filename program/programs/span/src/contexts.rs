@@ -299,10 +299,11 @@ pub struct Settle<'info> {
 #[cfg(feature = "devnet")]
 #[event_cpi]
 #[derive(Accounts)]
+#[instruction(asset: u8)]
 pub struct DevFeedInit<'info> {
     pub guard: UpgradeGuard<'info>,
     /// CHECK: raw oracle layout initialized by this instruction.
-    #[account(init, payer = guard.authority, space = 394, seeds = [b"dev_feed"], bump)]
+    #[account(init, payer = guard.authority, space = 394, seeds = [b"dev_feed".as_ref(), if asset == 0 { &[] } else { std::slice::from_ref(&asset) }], bump)]
     pub feed: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
@@ -310,9 +311,10 @@ pub struct DevFeedInit<'info> {
 #[cfg(feature = "devnet")]
 #[event_cpi]
 #[derive(Accounts)]
+#[instruction(asset: u8)]
 pub struct DevFeedWrite<'info> {
     pub guard: UpgradeGuard<'info>,
     /// CHECK: raw oracle layout, PDA and owner constrained.
-    #[account(mut, seeds = [b"dev_feed"], bump, owner = crate::ID)]
+    #[account(mut, seeds = [b"dev_feed".as_ref(), if asset == 0 { &[] } else { std::slice::from_ref(&asset) }], bump, owner = crate::ID)]
     pub feed: UncheckedAccount<'info>,
 }
