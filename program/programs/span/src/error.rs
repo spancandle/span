@@ -45,4 +45,5 @@ pub enum SpanError {
     ReceiverMismatch,
     Overflow,
     MarkClosed,
+    PriceAboveMax,
 }

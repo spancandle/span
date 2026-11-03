@@ -95,6 +95,7 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | Config | Admin, USDC and oracle addresses, timing parameters, optional SPAN mint and burn amount |
 | Candle | Start time, copied timing parameters, thirteen readings, read high and low |
 | Ticket | Seller, optional buyer, premium, length, reader, SPAN load, tail high and low, marks and burned amount |
+| Until | Optional per ticket: the time its seller keeps it for sale inside its hour |
 | Vault | Ticket's classic Token USDC account |
 | SPAN holding account | Ticket's unburned SPAN |
 
@@ -108,19 +109,26 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | set_params | ParamsSet | Change timing for future candles; admin only |
 | open_candle | CandleOpened | Open a candle on a minute (SOL), or one or two seconds after it (BTC, ETH) |
 | open_ticket | TicketOpened | Deposit 40 minus premium USDC and set the length |
+| open_running | TicketOpened, UntilSet | Open a ticket that stays for sale after its hour starts, until a time the seller sets |
 | withdraw | Withdrawn | Return collateral while the ticket remains unsold; seller only |
 | buy | Bought | Pay the premium into the vault |
+| buy_running | BoughtRunning | After the opening reading, pay what the candle has recorded plus the premium, up to a stated maximum |
 | load_span | SpanLoaded | First load of SPAN and selection of a reader and stride; buyer only |
 | set_marker | MarkerSet | Change the reader of a loaded Sold ticket; buyer only |
 | read | Read | Fill a scheduled reading during its window |
 | mark | Marked | Record a wick extension; burn SPAN only when it raises the payout |
 | settle | Settled | Distribute USDC and return unburned SPAN |
+| close_until | UntilClosed | Stop selling a ticket inside its hour (seller), or return the account's rent once the ticket is closed (anyone) |
 
-First loading and reader changes are allowed through `t0 + 3600 + age_limit`, inclusive. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. Buying and selling still close at the buying cutoff.
+First loading and reader changes are allowed through `t0 + 3600 + age_limit`, inclusive. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. Buying and selling still close at the buying cutoff, except for a ticket opened with `open_running`.
+
+## Buying inside the hour
+
+A ticket opened with `open_running` stays for sale after its hour starts, until the time its seller set, at most start plus 3,600 seconds. Before the cutoff it is bought with `buy` at its premium. After the opening reading, `buy_running` reads the current DOVES price with the same checks as `mark` and computes A, the payout of the high and low so far with that price included. The buyer pays A plus the premium. If the price extends the high or low, it is kept as the ticket's tail without burning SPAN, so the final payout cannot fall below A. A ticket with A at 40 USDC is not sold.
 
 ## Settlement
 
-Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the 40 USDC vault. Settlement is available after start plus 3,600 seconds, the read window, the age limit and one second.
+Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. Settlement is available after start plus 3,600 seconds, the read window, the age limit and one second.
 
 ## Authority
 

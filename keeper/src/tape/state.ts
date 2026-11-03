@@ -75,6 +75,11 @@ export function markLog(history: History, ticket: string) {
       sig,
     }));
 }
+/** The entry is separate from SPAN marks; its tails are already part of the ticket. */
+export function entryOf(history: History, ticket: string) {
+  const e = history.events("BoughtRunning").find(x=>x.ticket===ticket);
+  return e ? {sig:e.sig,at:e.blockTime,publishTs:e.publishTs,price:e.price,recorded:e.recorded,paid:e.paid} : null;
+}
 export function liveDocuments(
   chain: Chain,
   history: History,
@@ -157,6 +162,8 @@ export function liveDocuments(
       generated: Date.now(),
       tickets: tickets.map(([address, { value: t }]) => ({
         address,
+        until: (()=>{const u=[...(chain.untils?.values() ?? [])].find(x=>x.value.ticket===address);return u?String(u.value.until):null;})(),
+        entry: entryOf(history,address),
         asset: nameOf(assetOf(t.t0)),
         id: String(t.id),
         t0: String(t.t0),

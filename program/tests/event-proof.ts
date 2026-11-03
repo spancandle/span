@@ -23,6 +23,7 @@ export async function verifyEvents(
       if (old?.exists && old.programAddress === r.SPAN_PROGRAM_ADDRESS)
         return [];
     }
+    if (kind === r.SpanInstruction.OpenRunning) return ["TicketOpened", "UntilSet"];
     const names: Record<number, string> = {
       [r.SpanInstruction.Init]: "Initialized",
       [r.SpanInstruction.SetSpan]: "SpanSet",
@@ -37,6 +38,8 @@ export async function verifyEvents(
       [r.SpanInstruction.Read]: "Read",
       [r.SpanInstruction.Mark]: "Marked",
       [r.SpanInstruction.Settle]: "Settled",
+      [r.SpanInstruction.BuyRunning]: "BoughtRunning",
+      [r.SpanInstruction.CloseUntil]: "UntilClosed",
     };
     return [names[kind]];
   });
@@ -134,6 +137,45 @@ export async function verifyEvents(
         });
         break;
       }
+      case "UntilSet": {
+        const ix = own.find(ix => r.identifySpanInstruction(ix as any) === r.SpanInstruction.OpenRunning)!;
+        const a = r.parseOpenRunningInstruction(ix as any).accounts;
+        const u = r.getUntilDecoder().decode(bytes(a.until.address));
+        const t = r.getTicketDecoder().decode(bytes(event.data.ticket));
+        expect(d).toEqual({ ticket: event.data.ticket, id: t.id, t0: t.t0, until: u.until });
+        expect(u.ticket).toBe(event.data.ticket); expect(u.seller).toBe(t.seller);
+        break;
+      }
+      case "BoughtRunning": {
+        const e = event.data, t = r.getTicketDecoder().decode(bytes(e.ticket));
+        const ix = own.find(ix => r.identifySpanInstruction(ix as any) === r.SpanInstruction.BuyRunning)!;
+        const a = r.parseBuyRunningInstruction(ix as any).accounts;
+        const c = r.getCandleDecoder().decode(bytes(a.candle.address)), p = r.getTicketDecoder().decode(old(e.ticket).data);
+        const high = c.readHigh > p.tailHigh ? c.readHigh : p.tailHigh;
+        const low = p.tailLow === 0n || c.readLow < p.tailLow ? c.readLow : p.tailLow;
+        const recorded = payout(c, { ...p, tailHigh: e.price > high ? e.price : p.tailHigh, tailLow: e.price < low ? e.price : p.tailLow });
+        expect(d).toEqual({ ticket: e.ticket, id: t.id, t0: t.t0, buyer: unwrapOption(t.buyer), premium: t.premium,
+          recorded, paid: recorded + t.premium, price: Buffer.from(bytes(a.feed.address)).readBigUInt64LE(168),
+          publishTs: Buffer.from(bytes(a.feed.address)).readBigInt64LE(177), tailHigh: t.tailHigh, tailLow: t.tailLow, slot: svm.getClock().slot });
+        expect(Buffer.from(bytes(a.vault.address)).readBigUInt64LE(64) - tokenAmount(a.vault.address)).toBe(e.paid);
+        expect(t.marks).toBe(p.marks); expect(t.burned).toBe(p.burned);
+        break;
+      }
+      case "UntilClosed": {
+        const e = event.data, u = r.getUntilDecoder().decode(old(e.until).data);
+        expect(e.ticket).toBe(u.ticket); expect(svm.getAccount(e.until).exists).toBe(false);
+        const a = svm.getAccount(u.seller); const b = old(u.seller);
+        if (!a.exists) throw Error("Missing rent recipient");
+        let otherRent = 0n;
+        for (const x of events) if ((x.name === "Settled" || x.name === "Withdrawn") && x.data.seller === u.seller) {
+          const priorTicket = r.getTicketDecoder().decode(old(x.data.ticket).data);
+          otherRent += old(x.data.ticket).lamports + old((await findVaultPda(x.data.ticket))[0]).lamports;
+          if (priorTicket.spanLoaded > 0n && unwrapOption(priorTicket.buyer) === u.seller)
+            otherRent += old((await findSpanHoldPda(x.data.ticket))[0]).lamports;
+        }
+        expect(a.lamports - b.lamports + (payer === u.seller ? fee : 0n)).toBe(old(e.until).lamports + otherRent);
+        break;
+      }
       case "SpanLoaded": {
         const t = r.getTicketDecoder().decode(bytes(event.data.ticket));
         expect(d).toEqual({
@@ -216,7 +258,11 @@ export async function verifyEvents(
         const sellerNow = svm.getAccount(t.seller);
         if (!sellerNow.exists) throw Error();
         expect(sellerNow.lamports - old(t.seller).lamports).toBe(
-          rent +
+          rent + events.reduce((n, event) => {
+            if (event.name !== "UntilClosed") return n;
+            const account = old(event.data.until);
+            return n + (r.getUntilDecoder().decode(account.data).seller === t.seller ? account.lamports : 0n);
+          }, 0n) +
             (buyer === t.seller ? spanRent : 0n) -
             (payer === t.seller ? fee : 0n),
         );

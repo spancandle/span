@@ -56,6 +56,7 @@ export class Chain {
   configKey!: Address;
   candles = new Map<Address, Live<s.Candle>>();
   tickets = new Map<Address, Live<s.Ticket>>();
+  untils = new Map<Address, Live<s.Until>>();
   feeds = new Map<Asset, FeedValue>();
   get feed() { return this.feeds.get(0); }
   set feed(value: FeedValue | undefined) { if(value)this.feeds.set(0,value);else this.feeds.delete(0); }
@@ -119,8 +120,8 @@ export class Chain {
       this.onSlot();
     }
   }
-  ingest(kind: "candle" | "ticket", key: Address, raw: any, slot: number) {
-    const map = (kind === "candle" ? this.candles : this.tickets) as Map<
+  ingest(kind: "candle" | "ticket" | "until", key: Address, raw: any, slot: number) {
+    const map = (kind === "candle" ? this.candles : kind === "ticket" ? this.tickets : this.untils) as Map<
         Address,
         Live<any>
       >,
@@ -132,11 +133,11 @@ export class Chain {
     }
     const d = bytes(raw),
       disc =
-        kind === "candle" ? s.CANDLE_DISCRIMINATOR : s.TICKET_DISCRIMINATOR;
+        kind === "candle" ? s.CANDLE_DISCRIMINATOR : kind === "ticket" ? s.TICKET_DISCRIMINATOR : s.UNTIL_DISCRIMINATOR;
     if (
       raw.owner !== s.SPAN_PROGRAM_ADDRESS ||
       !disc.every((x, i) => d[i] === x) ||
-      d.length !== (kind === "candle" ? 247 : 173)
+      d.length !== (kind === "candle" ? 247 : kind === "ticket" ? 173 : 81)
     )
       return;
     if (old && old.data === raw.data[0]) {
@@ -146,7 +147,7 @@ export class Chain {
     const value =
       kind === "candle"
         ? s.getCandleDecoder().decode(d)
-        : s.getTicketDecoder().decode(d);
+        : kind === "ticket" ? s.getTicketDecoder().decode(d) : s.getUntilDecoder().decode(d);
     map.set(key, { value, slot, data: raw.data[0] });
     this.onChange();
   }
@@ -197,7 +198,7 @@ export class Chain {
   }
   async pollPrograms() {
     await Promise.all(
-      (["candle", "ticket"] as const).map(async (kind) => {
+      (["candle", "ticket", "until"] as const).map(async (kind) => {
         const v = await this.rpc.call("getProgramAccounts", [
           s.SPAN_PROGRAM_ADDRESS,
           {
@@ -207,14 +208,14 @@ export class Chain {
             filters: filter(
               kind === "candle"
                 ? s.CANDLE_DISCRIMINATOR
-                : s.TICKET_DISCRIMINATOR,
+                : kind === "ticket" ? s.TICKET_DISCRIMINATOR : s.UNTIL_DISCRIMINATOR,
             ),
           },
         ]);
         const seen = new Set(v.value.map((x: any) => x.pubkey));
         for (const x of v.value)
           this.ingest(kind, address(x.pubkey), x.account, v.context.slot);
-        const map = kind === "candle" ? this.candles : this.tickets;
+        const map = kind === "candle" ? this.candles : kind === "ticket" ? this.tickets : this.untils;
         for (const [key, item] of map)
           if (!seen.has(key) && item.slot <= v.context.slot) {
             map.delete(key);
@@ -341,7 +342,7 @@ export class Chain {
       .finally(() => this.busy.delete(name));
   }
   start(role: "keeper" | "tape") {
-    for (const kind of ["candle", "ticket"] as const)
+    for (const kind of ["candle", "ticket", "until"] as const)
       this.stops.push(
         this.ws.subscribe(
           "programSubscribe",
@@ -353,7 +354,7 @@ export class Chain {
               filters: filter(
                 kind === "candle"
                   ? s.CANDLE_DISCRIMINATOR
-                  : s.TICKET_DISCRIMINATOR,
+                  : kind === "ticket" ? s.TICKET_DISCRIMINATOR : s.UNTIL_DISCRIMINATOR,
               ),
             },
           ],

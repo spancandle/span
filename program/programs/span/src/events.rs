@@ -146,3 +146,32 @@ pub struct DevFeedUpdated {
     pub price: u64,
     pub publish_ts: i64,
 }
+
+#[event]
+pub struct UntilSet {
+    pub ticket: Pubkey,
+    pub id: u64,
+    pub t0: i64,
+    pub until: i64,
+}
+#[event]
+pub struct BoughtRunning {
+    pub ticket: Pubkey,
+    pub id: u64,
+    pub t0: i64,
+    pub buyer: Pubkey,
+    pub premium: u64,
+    pub recorded: u64,
+    pub paid: u64,
+    pub price: u64,
+    pub publish_ts: i64,
+    pub tail_high: u64,
+    pub tail_low: u64,
+    pub slot: u64,
+}
+#[event]
+pub struct UntilClosed {
+    pub ticket: Pubkey,
+    pub until: Pubkey,
+    pub closer: Pubkey,
+}

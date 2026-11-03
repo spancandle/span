@@ -42,7 +42,7 @@ export class Engine {
     readonly chain: Pick<
       Chain,
       "candles" | "tickets" | "config" | "feed" | "now"
-    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds">>,
+    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils">>,
     readonly keeper: Address,
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
@@ -185,6 +185,14 @@ export class Engine {
           end: c.t0 + 3600n + BigInt(c.ageLimit) + 2n,
         });
     }
+    for (const [until, {value}] of this.chain.untils ?? [])
+      if (!this.chain.tickets.has(value.ticket))
+        out.push({key:`closeUntil:${until}`,kind:"closeUntil",until,t0:0n});
+    for (const [key,p] of [...this.pending,...this.prepared])
+      if (p.action.kind === "closeUntil") {
+        const value = this.chain.untils?.get(p.action.until as Address)?.value;
+        if (!value || this.chain.tickets.has(value.ticket)) this.complete(key);
+      }
     for (const [k, p] of this.pending)
       if (
         p.action.ticket &&
@@ -238,6 +246,10 @@ export class Engine {
     return false;
   }
   private eligible(a: Action) {
+    if (a.kind === "closeUntil") {
+      const value = this.chain.untils?.get(a.until as Address)?.value;
+      return !!value && !this.chain.tickets.has(value.ticket);
+    }
     if (a.kind === "open") return this.canOpen(a.t0) && !this.abandoned.has(a.key);
     const c = this.candle(a),
       v = this.feed(a.t0);
@@ -263,6 +275,7 @@ export class Engine {
     if (this.closed) return;
     const actions = this.actions();
     for (const a of actions) {
+        if (a.kind === "closeUntil") continue;
         const v=this.feed(a.t0);
         if (a.kind !== "mark" || !v) continue;
         const t = this.chain.tickets.get(a.ticket as Address)!.value,
@@ -292,7 +305,7 @@ export class Engine {
         }
       }
     for (const a of actions) {
-      const v=this.feed(a.t0);
+      const v=a.kind === "closeUntil" ? undefined : this.feed(a.t0);
       if (a.kind === "read" && v) {
         const b = boundary(a.t0, a.j!),
           c = this.candle(a);
@@ -373,7 +386,7 @@ export class Engine {
       if (error === "BuyClosed") this.abandoned.add(p.action.key);
       this.next.set(p.action.key, Date.now() + 2000);
     }
-    if (p.action.kind === "settle")
+    if (p.action.kind === "settle" || p.action.kind === "closeUntil")
       this.next.set(p.action.key, Date.now() + 2000);
     if (error === "AlreadyProcessed") {
       if (p.action.kind === "mark") this.marked.delete(p.action.key);

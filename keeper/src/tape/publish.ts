@@ -10,7 +10,7 @@ import { readdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { atomicFile, atomicText } from "./http.js";
-import { liveDocuments, markLog, candleReads } from "./state.js";
+import { liveDocuments, markLog, candleReads, entryOf } from "./state.js";
 import { json } from "../common/env.js";
 import { log, safeError } from "../common/log.js";
 import { getCandleDecoder } from "../../../program/client/index.js";
@@ -177,7 +177,7 @@ export class Publisher {
         .events("Settled")
         .reverse()
         .slice(0, 500)
-        .map((x) => ({ ...x, asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
+        .map((x) => ({ ...x, entry:entryOf(this.history,x.ticket), asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
       withdrawals = this.history.events("Withdrawn").reverse().slice(0, 500).map(x=>({...x,asset:nameOf(assetOf(BigInt(x.t0)))})),
       ts = [...new Set([...receipts.map((x) => x.t0), ...this.closedReleaseHours()])]
         .sort((a, b) => (BigInt(a) > BigInt(b) ? -1 : 1))

@@ -100,6 +100,8 @@ export const SPAN_ERROR__RECEIVER_MISMATCH = 0x1798; // 6040
 export const SPAN_ERROR__OVERFLOW = 0x1799; // 6041
 /** MarkClosed:  */
 export const SPAN_ERROR__MARK_CLOSED = 0x179a; // 6042
+/** PriceAboveMax:  */
+export const SPAN_ERROR__PRICE_ABOVE_MAX = 0x179b; // 6043
 
 export type SpanError =
   | typeof SPAN_ERROR__ALREADY_LOADED
@@ -133,6 +135,7 @@ export type SpanError =
   | typeof SPAN_ERROR__OVERFLOW
   | typeof SPAN_ERROR__PAUSABLE_MINT
   | typeof SPAN_ERROR__PERMANENT_DELEGATE_MINT
+  | typeof SPAN_ERROR__PRICE_ABOVE_MAX
   | typeof SPAN_ERROR__READ_FILLED
   | typeof SPAN_ERROR__RECEIVER_MISMATCH
   | typeof SPAN_ERROR__SPAN_ALREADY_SET
@@ -180,6 +183,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [SPAN_ERROR__OVERFLOW]: ``,
     [SPAN_ERROR__PAUSABLE_MINT]: ``,
     [SPAN_ERROR__PERMANENT_DELEGATE_MINT]: ``,
+    [SPAN_ERROR__PRICE_ABOVE_MAX]: ``,
     [SPAN_ERROR__READ_FILLED]: ``,
     [SPAN_ERROR__RECEIVER_MISMATCH]: ``,
     [SPAN_ERROR__SPAN_ALREADY_SET]: ``,

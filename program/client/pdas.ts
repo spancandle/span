@@ -23,3 +23,9 @@ export const findEventAuthorityPda = () =>
     programAddress: SPAN_PROGRAM_ADDRESS,
     seeds: ["__event_authority"],
   });
+
+export const findUntilPda = (ticket: Address) =>
+  getProgramDerivedAddress({
+    programAddress: SPAN_PROGRAM_ADDRESS,
+    seeds: ["until", getAddressEncoder().encode(ticket)],
+  });

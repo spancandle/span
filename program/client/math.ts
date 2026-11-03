@@ -58,3 +58,13 @@ export function markAccepts(
   const next = { ...t, tailHigh: side === "High" ? price : t.tailHigh, tailLow: side === "Low" ? price : t.tailLow };
   return { accepted: true, side, burns: payout(c, next) > payout(c, t) };
 }
+
+/** Price recorded by an entry after the opening reading, preserving any new tail. */
+export function runningPrice(c: CandlePrices, t: TicketPrices, price: bigint) {
+  if (!c.reads[0].price) throw new RangeError("NoOpen");
+  const range = highLow(c, t);
+  const tailHigh = price > range.high ? price : t.tailHigh;
+  const tailLow = price < range.low ? price : t.tailLow;
+  const next = { ...t, tailHigh, tailLow };
+  return { recorded: payout(c, next), ...highLow(c, next), tailHigh, tailLow };
+}

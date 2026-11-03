@@ -81,3 +81,12 @@ impl Ticket {
         (high, low)
     }
 }
+
+#[account]
+#[derive(InitSpace)]
+pub struct Until {
+    pub ticket: Pubkey,
+    pub seller: Pubkey,
+    pub until: i64,
+    pub bump: u8,
+}

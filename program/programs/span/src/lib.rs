@@ -188,6 +188,116 @@ pub mod span {
         Ok(())
     }
 
+    pub fn open_running(ctx: Context<OpenRunning>, id: u64, premium: u64, strike_bps: u16, until: i64) -> Result<()> {
+        require!(
+            (PREMIUM_MIN..=PREMIUM_MAX).contains(&premium)
+                && strike_bps <= STRIKE_MAX_BPS && strike_bps % STRIKE_STEP_BPS == 0,
+            SpanError::InvalidValue
+        );
+        let deposit = VAULT_CAP.checked_sub(premium).ok_or(SpanError::Overflow)?;
+        let t = &mut ctx.accounts.ticket;
+        t.set_inner(Ticket {
+            id,
+            t0: ctx.accounts.gate.candle.t0,
+            seller: ctx.accounts.seller.key(),
+            buyer: None,
+            premium,
+            strike_bps,
+            state: TicketState::Open,
+            span_loaded: 0,
+            step_bps: 0,
+            marker: Pubkey::default(),
+            tail_high: 0,
+            tail_low: 0,
+            marks: 0,
+            burned: 0,
+            bump: ctx.bumps.ticket,
+            vault_bump: ctx.bumps.vault,
+            span_bump: 0,
+        });
+        let before = ctx.accounts.vault.amount;
+        token::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                token::TransferChecked {
+                    from: ctx.accounts.seller_source.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.seller.to_account_info(),
+                },
+            ),
+            deposit,
+            6,
+        )?;
+        ctx.accounts.vault.reload()?;
+        require!(
+            ctx.accounts.vault.amount.checked_sub(before) == Some(deposit),
+            SpanError::DepositMismatch
+        );
+        ctx.accounts.gate.config.next_ticket_id = id.checked_add(1).ok_or(SpanError::Overflow)?;
+        ctx.accounts.until.set_inner(Until {
+            ticket: t.key(), seller: t.seller, until, bump: ctx.bumps.until,
+        });
+        emit_cpi!(TicketOpened {
+            ticket: t.key(),
+            id,
+            t0: t.t0,
+            seller: t.seller,
+            premium,
+            strike_bps,
+            deposit
+        });
+        emit_cpi!(UntilSet { ticket: t.key(), id, t0: t.t0, until });
+        Ok(())
+    }
+
+    pub fn buy_running(ctx: Context<BuyRunning>, max_pay: u64) -> Result<()> {
+        let c = &ctx.accounts.candle;
+        let t = &ctx.accounts.ticket;
+        require!(t.state == TicketState::Open, SpanError::NotOpen);
+        require!(c.reads[0].price > 0, SpanError::NoOpen);
+        let clock = Clock::get()?;
+        require!(clock.unix_timestamp <= ctx.accounts.until.until, SpanError::BuyClosed);
+        let asset = c.t0.rem_euclid(60) as u8;
+        require_keys_eq!(ctx.accounts.feed.key(), oracle::feed_of(ctx.accounts.config.feed, asset)?, SpanError::FeedNotConfig);
+        let price = oracle::read(&ctx.accounts.feed.to_account_info(), clock.unix_timestamp, c.age_limit, asset)?;
+        require!(price.publish_ts > c.t0 && price.publish_ts <= math::add_time(c.t0, 3600)?, SpanError::OutsideCandle);
+        let (high, low) = t.high_low(c);
+        let recorded = math::payout(c.reads[0].price, high.max(price.price), low.min(price.price), t.strike_bps)?;
+        require!(recorded < VAULT_CAP, SpanError::CapReached);
+        let paid = recorded.checked_add(t.premium).ok_or(SpanError::Overflow)?;
+        require!(paid <= max_pay, SpanError::PriceAboveMax);
+        let before = ctx.accounts.vault.amount;
+        token::transfer_checked(CpiContext::new(ctx.accounts.token_program.key(), token::TransferChecked {
+            from: ctx.accounts.buyer_source.to_account_info(),
+            mint: ctx.accounts.usdc_mint.to_account_info(),
+            to: ctx.accounts.vault.to_account_info(),
+            authority: ctx.accounts.buyer.to_account_info(),
+        }), paid, 6)?;
+        ctx.accounts.vault.reload()?;
+        require!(ctx.accounts.vault.amount.checked_sub(before) == Some(paid), SpanError::DepositMismatch);
+        require!(ctx.accounts.vault.amount >= VAULT_CAP, SpanError::DepositMismatch);
+        let t = &mut ctx.accounts.ticket;
+        if price.price > high { t.tail_high = price.price; }
+        if price.price < low { t.tail_low = price.price; }
+        t.buyer = Some(ctx.accounts.buyer.key());
+        t.state = TicketState::Sold;
+        emit_cpi!(BoughtRunning {
+            ticket: t.key(), id: t.id, t0: t.t0, buyer: ctx.accounts.buyer.key(), premium: t.premium,
+            recorded, paid, price: price.price, publish_ts: price.publish_ts,
+            tail_high: t.tail_high, tail_low: t.tail_low, slot: clock.slot,
+        });
+        Ok(())
+    }
+
+    pub fn close_until(ctx: Context<CloseUntil>) -> Result<()> {
+        if ctx.accounts.ticket.owner == &crate::ID && !ctx.accounts.ticket.data_is_empty() {
+            require_keys_eq!(ctx.accounts.closer.key(), ctx.accounts.until.seller, SpanError::NotSeller);
+        }
+        emit_cpi!(UntilClosed { ticket: ctx.accounts.until.ticket, until: ctx.accounts.until.key(), closer: ctx.accounts.closer.key() });
+        Ok(())
+    }
+
     pub fn open_ticket(ctx: Context<OpenTicket>, id: u64, premium: u64, strike_bps: u16) -> Result<()> {
         require!(
             (PREMIUM_MIN..=PREMIUM_MAX).contains(&premium)

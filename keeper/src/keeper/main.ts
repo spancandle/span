@@ -28,7 +28,17 @@ export async function createPrepare(
   let candleRent: Promise<bigint> | undefined;
   return async (a: Action, fee: bigint) => {
     const hash = latest();
-    if (!hash || !chain.config) throw Error("Preparation unavailable");
+    if (!hash) throw Error("Preparation unavailable");
+    if (a.kind === "closeUntil") {
+      const key = address(a.until!), value = chain.untils.get(key)?.value;
+      if (!value) throw Error("Until closed");
+      const observed = await rpc.call("getAccountInfo", [value.ticket, {encoding:"base64",commitment:"confirmed"}]);
+      if (observed?.value !== null) throw Error("Ticket still present");
+      const ix = s.getCloseUntilInstruction({until:key,ticket:value.ticket,seller:value.seller,closer:payer,eventAuthority,program:s.SPAN_PROGRAM_ADDRESS});
+      priorities.register(a.key,[ix],payer.address);
+      return prepareTransaction([ix],payer,hash,a,fee);
+    }
+    if (!chain.config) throw Error("Preparation unavailable");
     if (a.kind === "open") {
       const candle = (await s.findCandlePda(a.t0))[0];
       const ix = s.getOpenCandleInstruction({ config, payer, candle,

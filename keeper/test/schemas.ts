@@ -28,6 +28,7 @@ const mark = object({
       sig: nullable("string"),
     }),
   );
+const entry = nullable(object({sig:"string",at:nullable("integerString"),publishTs:"integerString",price:"integerString",recorded:"integerString",paid:"integerString"}));
 export const schemas: Record<string, Schema> = {
   state: object({
     v: "number",
@@ -67,6 +68,8 @@ export const schemas: Record<string, Schema> = {
           offers: array(
             object({
               address: "string",
+        until: nullable("integerString"),
+        entry,
               id: "integerString",
               premium: "integerString",
         strikeBps: "number",
@@ -136,6 +139,7 @@ export const schemas: Record<string, Schema> = {
     receipts: array(
       object({
         ticket: "string",
+        entry,
         asset: "string",
         id: "integerString",
         t0: "integerString",

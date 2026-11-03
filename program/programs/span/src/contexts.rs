@@ -318,3 +318,77 @@ pub struct DevFeedWrite<'info> {
     #[account(mut, seeds = [b"dev_feed".as_ref(), if asset == 0 { &[] } else { std::slice::from_ref(&asset) }], bump, owner = crate::ID)]
     pub feed: UncheckedAccount<'info>,
 }
+
+#[event_cpi]
+#[derive(Accounts)]
+#[instruction(id: u64, premium: u64, strike_bps: u16, sale_until: i64)]
+pub struct OpenRunning<'info> {
+    pub gate: TicketGate<'info>,
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    #[account(init, payer = seller, space = running_ticket_space(&gate, id, sale_until)?, seeds = [b"ticket".as_ref(), id.to_le_bytes().as_ref()], bump)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(address = gate.config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    #[account(init, payer = seller, seeds = [b"vault", ticket.key().as_ref()], bump,
+        token::mint = usdc_mint, token::authority = ticket, token::token_program = token_program)]
+    pub vault: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = seller_source.mint == gate.config.usdc_mint @ SpanError::WrongMint,
+        constraint = seller_source.owner == seller.key() @ SpanError::WrongOwner)]
+    pub seller_source: Box<Account<'info, UsdcAccount>>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    #[account(init, payer = seller, space = 8 + Until::INIT_SPACE, seeds = [b"until", ticket.key().as_ref()], bump)]
+    pub until: Box<Account<'info, Until>>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct BuyRunning<'info> {
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump)]
+    pub candle: Box<Account<'info, Candle>>,
+    pub buyer: Signer<'info>,
+    #[account(mut, seeds = [b"ticket", &ticket.id.to_le_bytes()], bump = ticket.bump,
+        constraint = ticket.t0 == candle.t0 @ SpanError::InvalidValue)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    #[account(mut, seeds = [b"vault", ticket.key().as_ref()], bump = ticket.vault_bump,
+        constraint = vault.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = vault.owner == ticket.key() @ SpanError::WrongOwner)]
+    pub vault: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = buyer_source.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = buyer_source.owner == buyer.key() @ SpanError::WrongOwner)]
+    pub buyer_source: Box<Account<'info, UsdcAccount>>,
+    pub token_program: Program<'info, Token>,
+    #[account(seeds = [b"until", ticket.key().as_ref()], bump = until.bump,
+        constraint = until.ticket == ticket.key() @ SpanError::InvalidValue)]
+    pub until: Box<Account<'info, Until>>,
+    /// CHECK: oracle address, owner and bytes are checked in the instruction.
+    pub feed: UncheckedAccount<'info>,
+}
+
+
+pub fn running_ticket_space(gate: &TicketGate, id: u64, until: i64) -> Result<usize> {
+    require_eq!(id, gate.config.next_ticket_id, SpanError::IdMismatch);
+    let cutoff = gate.candle.t0.checked_sub(i64::from(gate.candle.buy_cutoff)).ok_or(SpanError::Overflow)?;
+    require!(until > cutoff && until <= crate::math::add_time(gate.candle.t0, 3600)?, SpanError::InvalidValue);
+    require!(Clock::get()?.unix_timestamp < until, SpanError::BuyClosed);
+    Ok(8 + Ticket::INIT_SPACE)
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct CloseUntil<'info> {
+    #[account(mut, close = seller, seeds = [b"until", until.ticket.as_ref()], bump = until.bump)]
+    pub until: Box<Account<'info, Until>>,
+    /// CHECK: bound to the stored rent recipient.
+    #[account(mut, address = until.seller @ SpanError::ReceiverMismatch)]
+    pub seller: UncheckedAccount<'info>,
+    /// CHECK: address is bound; owner and data determine whether seller authority is needed.
+    #[account(address = until.ticket @ SpanError::InvalidValue)]
+    pub ticket: UncheckedAccount<'info>,
+    pub closer: Signer<'info>,
+}

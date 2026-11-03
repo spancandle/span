@@ -2,7 +2,7 @@
   "address": "ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd",
   "metadata": {
     "name": "span",
-    "version": "1.12.0",
+    "version": "1.13.0",
     "spec": "0.1.0"
   },
   "instructions": [
@@ -120,6 +120,215 @@
         {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "buy_running",
+      "discriminator": [
+        74,
+        10,
+        248,
+        11,
+        211,
+        119,
+        3,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "signer": true
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer_source",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "until",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  110,
+                  116,
+                  105,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_pay",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_until",
+      "discriminator": [
+        255,
+        198,
+        178,
+        201,
+        174,
+        233,
+        49,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "until",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  110,
+                  116,
+                  105,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "until.ticket",
+                "account": "Until"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "ticket"
+        },
+        {
+          "name": "closer",
+          "signer": true
         },
         {
           "name": "event_authority"
@@ -562,6 +771,179 @@
       "args": [
         {
           "name": "t0",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "open_running",
+      "discriminator": [
+        7,
+        84,
+        120,
+        64,
+        108,
+        89,
+        147,
+        154
+      ],
+      "accounts": [
+        {
+          "name": "gate",
+          "accounts": [
+            {
+              "name": "config",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "candle",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      97,
+                      110,
+                      100,
+                      108,
+                      101
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "candle.t0",
+                    "account": "Candle"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_source",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "until",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  110,
+                  116,
+                  105,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "id",
+          "type": "u64"
+        },
+        {
+          "name": "premium",
+          "type": "u64"
+        },
+        {
+          "name": "strike_bps",
+          "type": "u16"
+        },
+        {
+          "name": "until",
           "type": "i64"
         }
       ]
@@ -1344,6 +1726,19 @@
         235,
         200
       ]
+    },
+    {
+      "name": "Until",
+      "discriminator": [
+        156,
+        91,
+        73,
+        123,
+        107,
+        4,
+        250,
+        179
+      ]
     }
   ],
   "events": [
@@ -1358,6 +1753,19 @@
         76,
         42,
         104
+      ]
+    },
+    {
+      "name": "BoughtRunning",
+      "discriminator": [
+        162,
+        77,
+        73,
+        67,
+        136,
+        210,
+        109,
+        140
       ]
     },
     {
@@ -1501,6 +1909,32 @@
         170,
         103,
         203
+      ]
+    },
+    {
+      "name": "UntilClosed",
+      "discriminator": [
+        209,
+        77,
+        113,
+        161,
+        44,
+        81,
+        10,
+        192
+      ]
+    },
+    {
+      "name": "UntilSet",
+      "discriminator": [
+        45,
+        142,
+        166,
+        142,
+        26,
+        89,
+        194,
+        90
       ]
     },
     {
@@ -1689,6 +2123,10 @@
     {
       "code": 6042,
       "name": "MarkClosed"
+    },
+    {
+      "code": 6043,
+      "name": "PriceAboveMax"
     }
   ],
   "types": [
@@ -1715,6 +2153,62 @@
           },
           {
             "name": "premium",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BoughtRunning",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "premium",
+            "type": "u64"
+          },
+          {
+            "name": "recorded",
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "publish_ts",
+            "type": "i64"
+          },
+          {
+            "name": "tail_high",
+            "type": "u64"
+          },
+          {
+            "name": "tail_low",
+            "type": "u64"
+          },
+          {
+            "name": "slot",
             "type": "u64"
           }
         ]
@@ -2382,6 +2876,74 @@
           },
           {
             "name": "Sold"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Until",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "until",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UntilClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "until",
+            "type": "pubkey"
+          },
+          {
+            "name": "closer",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UntilSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "until",
+            "type": "i64"
           }
         ]
       }
