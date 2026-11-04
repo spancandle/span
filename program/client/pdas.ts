@@ -29,3 +29,9 @@ export const findUntilPda = (ticket: Address) =>
     programAddress: SPAN_PROGRAM_ADDRESS,
     seeds: ["until", getAddressEncoder().encode(ticket)],
   });
+
+export const findResalePda = (ticket: Address) =>
+  getProgramDerivedAddress({
+    programAddress: SPAN_PROGRAM_ADDRESS,
+    seeds: ["resale", getAddressEncoder().encode(ticket)],
+  });

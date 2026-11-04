@@ -188,6 +188,106 @@ pub mod span {
         Ok(())
     }
 
+    pub fn list_resale(ctx: Context<ListResale>, ask: u64, until: i64) -> Result<()> {
+        let t = &ctx.accounts.ticket;
+        require!(t.state == TicketState::Sold, SpanError::NotSold);
+        require!(t.buyer == Some(ctx.accounts.holder.key()), SpanError::NotBuyer);
+        require!((PREMIUM_MIN..=PREMIUM_MAX).contains(&ask), SpanError::InvalidValue);
+        require!(Clock::get()?.unix_timestamp < until && until <= math::add_time(ctx.accounts.candle.t0, 3600)?, SpanError::InvalidValue);
+        ctx.accounts.resale.set_inner(Resale {
+            ticket: t.key(), holder: ctx.accounts.holder.key(), ask, until, bump: ctx.bumps.resale,
+        });
+        emit_cpi!(ResaleListed { ticket: t.key(), id: t.id, t0: t.t0, holder: ctx.accounts.holder.key(), ask, until });
+        Ok(())
+    }
+
+    pub fn buy_resale(ctx: Context<BuyResale>, max_pay: u64) -> Result<()> {
+        let t = &ctx.accounts.ticket;
+        let c = &ctx.accounts.candle;
+        let offer = &ctx.accounts.resale;
+        require!(t.state == TicketState::Sold, SpanError::NotSold);
+        require!(t.buyer == Some(offer.holder), SpanError::NotHolder);
+        require_keys_neq!(ctx.accounts.buyer.key(), offer.holder, SpanError::InvalidValue);
+        require!(c.reads[0].price > 0, SpanError::NoOpen);
+        let clock = Clock::get()?;
+        require!(clock.unix_timestamp <= offer.until, SpanError::BuyClosed);
+        let asset = c.t0.rem_euclid(60) as u8;
+        require_keys_eq!(ctx.accounts.feed.key(), oracle::feed_of(ctx.accounts.config.feed, asset)?, SpanError::FeedNotConfig);
+        // A vacant read can still absorb the observation already on chain.
+        let elapsed = clock.unix_timestamp.checked_sub(c.t0).ok_or(SpanError::Overflow)?;
+        let j = elapsed / 300;
+        if (0..=12).contains(&j) {
+            let boundary = math::add_time(c.t0, j * 300)?;
+            require!(c.reads[j as usize].price > 0 || clock.unix_timestamp > math::add_time(boundary, i64::from(c.read_window) + i64::from(c.age_limit))?, SpanError::ReadPending);
+        }
+        let price = oracle::peek(&ctx.accounts.feed.to_account_info(), asset)?;
+        for k in 1..=12 {
+            let boundary = math::add_time(c.t0, k as i64 * 300)?;
+            require!(c.reads[k].price > 0 || price.publish_ts < boundary || price.publish_ts > math::add_time(boundary, i64::from(c.read_window))? || i128::from(clock.unix_timestamp) - i128::from(price.publish_ts) > i128::from(c.age_limit), SpanError::ReadPending);
+        }
+        let (high, low) = t.high_low(c);
+        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps)?;
+        require!(recorded < VAULT_CAP, SpanError::CapReached);
+        let paid = recorded.checked_add(offer.ask).ok_or(SpanError::Overflow)?;
+        require!(paid <= max_pay, SpanError::PriceAboveMax);
+        let before = ctx.accounts.holder_usdc.amount;
+        token::transfer_checked(CpiContext::new(ctx.accounts.token_program.key(), token::TransferChecked {
+            from: ctx.accounts.buyer_source.to_account_info(), mint: ctx.accounts.usdc_mint.to_account_info(),
+            to: ctx.accounts.holder_usdc.to_account_info(), authority: ctx.accounts.buyer.to_account_info(),
+        }), paid, 6)?;
+        ctx.accounts.holder_usdc.reload()?;
+        require!(ctx.accounts.holder_usdc.amount.checked_sub(before) == Some(paid), SpanError::DepositMismatch);
+        let mut span_returned = 0;
+        if t.span_loaded > 0 {
+            let mint = ctx.accounts.span_mint.as_ref().ok_or(SpanError::MissingAccount)?;
+            let hold = ctx.accounts.span_hold.as_ref().ok_or(SpanError::MissingAccount)?;
+            let program = ctx.accounts.span_token_program.as_ref().ok_or(SpanError::MissingAccount)?;
+            let (expected, _) = Pubkey::find_program_address(&[b"span", t.key().as_ref()], &crate::ID);
+            require_keys_eq!(hold.key(), expected, SpanError::WrongOwner);
+            require_keys_eq!(hold.mint, mint.key(), SpanError::WrongMint);
+            require_keys_eq!(hold.owner, t.key(), SpanError::WrongOwner);
+            require_keys_eq!(*hold.to_account_info().owner, program.key(), SpanError::UnsupportedTokenProgram);
+            require_keys_eq!(*mint.to_account_info().owner, program.key(), SpanError::UnsupportedTokenProgram);
+            let id_bytes = t.id.to_le_bytes();
+            let bump = [t.bump];
+            let seeds: &[&[u8]] = &[b"ticket", &id_bytes, &bump];
+            span_returned = hold.amount;
+            if span_returned > 0 {
+                let destination = ctx.accounts.holder_span.as_ref().ok_or(SpanError::MissingAccount)?;
+                require_keys_eq!(destination.mint, mint.key(), SpanError::WrongMint);
+                require_keys_eq!(destination.owner, offer.holder, SpanError::WrongOwner);
+                require_keys_eq!(*destination.to_account_info().owner, program.key(), SpanError::UnsupportedTokenProgram);
+                token_interface::transfer_checked(CpiContext::new_with_signer(program.key(), token_interface::TransferChecked {
+                    from: hold.to_account_info(), mint: mint.to_account_info(), to: destination.to_account_info(), authority: t.to_account_info(),
+                }, &[seeds]), span_returned, mint.decimals)?;
+            }
+            token_interface::close_account(CpiContext::new_with_signer(program.key(), token_interface::CloseAccount {
+                account: hold.to_account_info(), destination: ctx.accounts.holder.to_account_info(), authority: t.to_account_info(),
+            }, &[seeds]))?;
+        }
+        let reads = c.reads.iter().enumerate().fold(0u16, |bits, (j, r)| if r.price > 0 { bits | (1u16 << j) } else { bits });
+        let t = &mut ctx.accounts.ticket;
+        t.buyer = Some(ctx.accounts.buyer.key());
+        t.span_loaded = 0;
+        t.step_bps = 0;
+        t.marker = Pubkey::default();
+        t.span_bump = 0;
+        emit_cpi!(Resold {
+            ticket: t.key(), id: t.id, t0: t.t0, from: offer.holder, to: ctx.accounts.buyer.key(),
+            ask: offer.ask, recorded, paid, high, low, tail_high: t.tail_high, tail_low: t.tail_low,
+            reads, marks: t.marks, burned: t.burned, span_returned, slot: clock.slot,
+        });
+        Ok(())
+    }
+
+    pub fn close_resale(ctx: Context<CloseResale>) -> Result<()> {
+        if ctx.accounts.ticket.owner == &crate::ID && !ctx.accounts.ticket.data_is_empty() {
+            require_keys_eq!(ctx.accounts.closer.key(), ctx.accounts.resale.holder, SpanError::NotHolder);
+        }
+        emit_cpi!(ResaleClosed { ticket: ctx.accounts.resale.ticket, resale: ctx.accounts.resale.key(), holder: ctx.accounts.resale.holder, closer: ctx.accounts.closer.key() });
+        Ok(())
+    }
+
     pub fn open_running(ctx: Context<OpenRunning>, id: u64, premium: u64, strike_bps: u16, until: i64) -> Result<()> {
         require!(
             (PREMIUM_MIN..=PREMIUM_MAX).contains(&premium)

@@ -12,7 +12,7 @@ it("P0 excludes development instructions and non-DOVES owners from the public bu
   const idl = JSON.parse(
     readFileSync(new URL("../client/idl/span.json", import.meta.url), "utf8"),
   );
-  expect(idl.instructions).toHaveLength(16);
+  expect(idl.instructions).toHaveLength(19);
   expect(idl.instructions.some((x: any) => x.name.startsWith("dev_"))).toBe(
     false,
   );

@@ -46,4 +46,6 @@ pub enum SpanError {
     Overflow,
     MarkClosed,
     PriceAboveMax,
+    NotHolder,
+    ReadPending,
 }

@@ -29,6 +29,8 @@ const mark = object({
     }),
   );
 const entry = nullable(object({sig:"string",at:nullable("integerString"),publishTs:"integerString",price:"integerString",recorded:"integerString",paid:"integerString"}));
+const resale=nullable(object({holder:"string",ask:"integerString",until:"integerString"}));
+const transfers=array(object({sig:"string",at:nullable("integerString"),from:"string",to:"string",ask:"integerString",recorded:"integerString",paid:"integerString",spanReturned:"integerString"}));
 export const schemas: Record<string, Schema> = {
   state: object({
     v: "number",
@@ -68,6 +70,8 @@ export const schemas: Record<string, Schema> = {
           offers: array(
             object({
               address: "string",
+        resale,
+        transfers,
         until: nullable("integerString"),
         entry,
               id: "integerString",
@@ -139,6 +143,7 @@ export const schemas: Record<string, Schema> = {
     receipts: array(
       object({
         ticket: "string",
+        transfers,
         entry,
         asset: "string",
         id: "integerString",

@@ -7,9 +7,12 @@
  */
 
 export * from "./buy.js";
+export * from "./buyResale.js";
 export * from "./buyRunning.js";
+export * from "./closeResale.js";
 export * from "./closeUntil.js";
 export * from "./init.js";
+export * from "./listResale.js";
 export * from "./loadSpan.js";
 export * from "./mark.js";
 export * from "./openCandle.js";

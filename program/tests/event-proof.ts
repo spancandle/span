@@ -40,6 +40,9 @@ export async function verifyEvents(
       [r.SpanInstruction.Settle]: "Settled",
       [r.SpanInstruction.BuyRunning]: "BoughtRunning",
       [r.SpanInstruction.CloseUntil]: "UntilClosed",
+      [r.SpanInstruction.ListResale]: "ResaleListed",
+      [r.SpanInstruction.BuyResale]: "Resold",
+      [r.SpanInstruction.CloseResale]: "ResaleClosed",
     };
     return [names[kind]];
   });
@@ -176,6 +179,46 @@ export async function verifyEvents(
         expect(a.lamports - b.lamports + (payer === u.seller ? fee : 0n)).toBe(old(e.until).lamports + otherRent);
         break;
       }
+      case "ResaleListed": {
+        const e = event.data, ix = own.find(ix => r.identifySpanInstruction(ix as any) === r.SpanInstruction.ListResale)!;
+        const a = r.parseListResaleInstruction(ix as any).accounts;
+        const offer = r.getResaleDecoder().decode(bytes(a.resale.address)), t = r.getTicketDecoder().decode(bytes(e.ticket));
+        expect(e).toEqual({ticket:e.ticket,id:t.id,t0:t.t0,holder:offer.holder,ask:offer.ask,until:offer.until});
+        expect(offer.ticket).toBe(e.ticket);expect(offer.holder).toBe(unwrapOption(t.buyer));
+        break;
+      }
+      case "Resold": {
+        const e = event.data, ix = own.find(ix => r.identifySpanInstruction(ix as any) === r.SpanInstruction.BuyResale)!;
+        const a = r.parseBuyResaleInstruction(ix as any).accounts;
+        const before = r.getTicketDecoder().decode(old(e.ticket).data), t = r.getTicketDecoder().decode(bytes(e.ticket));
+        const c = r.getCandleDecoder().decode(bytes(a.candle.address)), offer = r.getResaleDecoder().decode(old(a.resale.address).data);
+        const range = highLow(c,before), recorded = payout(c,before);
+        expect(e).toEqual({ticket:e.ticket,id:before.id,t0:before.t0,from:unwrapOption(before.buyer),to:unwrapOption(t.buyer),ask:offer.ask,recorded,paid:recorded+offer.ask,...range,tailHigh:before.tailHigh,tailLow:before.tailLow,reads:c.reads.reduce((n,x,j)=>x.price?n|(1<<j):n,0),marks:before.marks,burned:before.burned,spanReturned:before.spanLoaded?tokenAmount((await findSpanHoldPda(e.ticket))[0]):0n,slot:svm.getClock().slot});
+        expect(Buffer.from(bytes(a.holderUsdc.address)).readBigUInt64LE(64)-tokenAmount(a.holderUsdc.address)).toBe(e.paid);
+        expect(svm.getAccount(a.resale.address).exists).toBe(false);
+        const oldHold=(await findSpanHoldPda(e.ticket))[0];
+        const refund=old(a.resale.address).lamports+(before.spanLoaded?old(oldHold).lamports:0n);
+        const holder=svm.getAccount(e.from);if(!holder.exists)throw Error();
+        expect(holder.lamports-old(e.from).lamports+(payer===e.from?fee:0n)).toBe(refund);
+        for(const key of ['tailHigh','tailLow','marks','burned'] as const)expect(t[key]).toBe(before[key]);
+        if(!events.some(e=>e.name==='SpanLoaded'))expect(t).toMatchObject({spanLoaded:0n,stepBps:0,spanBump:0,marker:'11111111111111111111111111111111'});
+        break;
+      }
+      case "ResaleClosed": {
+        const e=event.data, offer=r.getResaleDecoder().decode(old(e.resale).data);
+        expect(e.ticket).toBe(offer.ticket);expect(e.holder).toBe(offer.holder);expect(svm.getAccount(e.resale).exists).toBe(false);
+        let rent:bigint=old(e.resale).lamports;
+        for(const x of events){
+          if(x.name==='Settled'||x.name==='Withdrawn'){const t=r.getTicketDecoder().decode(old(x.data.ticket).data);
+            if(t.seller===offer.holder)rent+=old(x.data.ticket).lamports+old((await findVaultPda(x.data.ticket))[0]).lamports;
+            if(t.spanLoaded>0n&&unwrapOption(t.buyer)===offer.holder)rent+=old((await findSpanHoldPda(x.data.ticket))[0]).lamports;
+          }
+          if(x.name==='UntilClosed'){const u=old(x.data.until);if(r.getUntilDecoder().decode(u.data).seller===offer.holder)rent+=u.lamports;}
+        }
+        const holder=svm.getAccount(offer.holder);if(!holder.exists)throw Error();
+        expect(holder.lamports-old(offer.holder).lamports+(payer===offer.holder?fee:0n)).toBe(rent);
+        break;
+      }
       case "SpanLoaded": {
         const t = r.getTicketDecoder().decode(bytes(event.data.ticket));
         expect(d).toEqual({
@@ -259,6 +302,7 @@ export async function verifyEvents(
         if (!sellerNow.exists) throw Error();
         expect(sellerNow.lamports - old(t.seller).lamports).toBe(
           rent + events.reduce((n, event) => {
+            if (event.name === "ResaleClosed") {const account=old(event.data.resale);return n+(r.getResaleDecoder().decode(account.data).holder===t.seller?account.lamports:0n);}
             if (event.name !== "UntilClosed") return n;
             const account = old(event.data.until);
             return n + (r.getUntilDecoder().decode(account.data).seller === t.seller ? account.lamports : 0n);
@@ -270,7 +314,7 @@ export async function verifyEvents(
           const b = svm.getAccount(buyer);
           if (!b.exists) throw Error();
           expect(b.lamports - old(buyer).lamports).toBe(
-            spanRent - (payer === buyer ? fee : 0n),
+            spanRent + events.reduce((n,e)=>e.name==='ResaleClosed'&&e.data.holder===buyer?n+old(e.data.resale).lamports:n,0n) - (payer === buyer ? fee : 0n),
           );
         }
         if (event.name === "Withdrawn") {

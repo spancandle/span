@@ -19,6 +19,7 @@ import type { EventHours } from "../common/event-hours.js";
 export const delta = (xs: (string | number | bigint)[]) =>
   xs.map((x, i) => String(i ? BigInt(x) - BigInt(xs[i - 1]) : x)).join(",");
 const sha1 = (x: string) => createHash("sha1").update(x).digest("hex");
+import {transfersOf} from './transfers.js';
 const RETAIN = 8 * 86400;
 export class Publisher {
   private liveAt = 0;
@@ -177,7 +178,7 @@ export class Publisher {
         .events("Settled")
         .reverse()
         .slice(0, 500)
-        .map((x) => ({ ...x, entry:entryOf(this.history,x.ticket), asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
+        .map((x) => ({ ...x, entry:entryOf(this.history,x.ticket), transfers:transfersOf(this.history,x.ticket), asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
       withdrawals = this.history.events("Withdrawn").reverse().slice(0, 500).map(x=>({...x,asset:nameOf(assetOf(BigInt(x.t0)))})),
       ts = [...new Set([...receipts.map((x) => x.t0), ...this.closedReleaseHours()])]
         .sort((a, b) => (BigInt(a) > BigInt(b) ? -1 : 1))

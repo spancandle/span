@@ -37,12 +37,15 @@ import {
 import {
   getCandleCodec,
   getConfigCodec,
+  getResaleCodec,
   getTicketCodec,
   getUntilCodec,
   type Candle,
   type CandleArgs,
   type Config,
   type ConfigArgs,
+  type Resale,
+  type ResaleArgs,
   type Ticket,
   type TicketArgs,
   type Until,
@@ -50,9 +53,12 @@ import {
 } from "../accounts/index.js";
 import {
   getBuyInstructionAsync,
+  getBuyResaleInstructionAsync,
   getBuyRunningInstructionAsync,
+  getCloseResaleInstruction,
   getCloseUntilInstruction,
   getInitInstructionAsync,
+  getListResaleInstructionAsync,
   getLoadSpanInstructionAsync,
   getMarkInstructionAsync,
   getOpenCandleInstructionAsync,
@@ -66,9 +72,12 @@ import {
   getSettleInstructionAsync,
   getWithdrawInstructionAsync,
   parseBuyInstruction,
+  parseBuyResaleInstruction,
   parseBuyRunningInstruction,
+  parseCloseResaleInstruction,
   parseCloseUntilInstruction,
   parseInitInstruction,
+  parseListResaleInstruction,
   parseLoadSpanInstruction,
   parseMarkInstruction,
   parseOpenCandleInstruction,
@@ -82,18 +91,24 @@ import {
   parseSettleInstruction,
   parseWithdrawInstruction,
   type BuyAsyncInput,
+  type BuyResaleAsyncInput,
   type BuyRunningAsyncInput,
+  type CloseResaleInput,
   type CloseUntilInput,
   type InitAsyncInput,
+  type ListResaleAsyncInput,
   type LoadSpanAsyncInput,
   type MarkAsyncInput,
   type OpenCandleAsyncInput,
   type OpenRunningAsyncInput,
   type OpenTicketAsyncInput,
   type ParsedBuyInstruction,
+  type ParsedBuyResaleInstruction,
   type ParsedBuyRunningInstruction,
+  type ParsedCloseResaleInstruction,
   type ParsedCloseUntilInstruction,
   type ParsedInitInstruction,
+  type ParsedListResaleInstruction,
   type ParsedLoadSpanInstruction,
   type ParsedMarkInstruction,
   type ParsedOpenCandleInstruction,
@@ -117,6 +132,7 @@ import {
 import {
   findCandlePda,
   findConfigPda,
+  findResalePda,
   findTicketPda,
   findUntilPda,
   findVaultPda,
@@ -128,6 +144,7 @@ export const SPAN_PROGRAM_ADDRESS =
 export enum SpanAccount {
   Candle,
   Config,
+  Resale,
   Ticket,
   Until,
 }
@@ -157,6 +174,17 @@ export function identifySpanAccount(
     )
   ) {
     return SpanAccount.Config;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([46, 18, 189, 186, 7, 168, 153, 201]),
+      ),
+      0,
+    )
+  ) {
+    return SpanAccount.Resale;
   }
   if (
     containsBytes(
@@ -196,6 +224,9 @@ export enum SpanEvent {
   MarkerSet,
   ParamsSet,
   Read,
+  ResaleClosed,
+  ResaleListed,
+  Resold,
   Settled,
   SpanLoaded,
   SpanSet,
@@ -312,6 +343,39 @@ export function identifySpanEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([14, 111, 94, 1, 238, 73, 83, 36]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.ResaleClosed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([47, 254, 165, 92, 46, 59, 24, 78]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.ResaleListed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([0, 107, 237, 161, 251, 73, 29, 253]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.Resold;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([232, 210, 40, 17, 142, 124, 145, 238]),
       ),
       0,
@@ -392,9 +456,12 @@ export function identifySpanEvent(
 
 export enum SpanInstruction {
   Buy,
+  BuyResale,
   BuyRunning,
+  CloseResale,
   CloseUntil,
   Init,
+  ListResale,
   LoadSpan,
   Mark,
   OpenCandle,
@@ -428,12 +495,34 @@ export function identifySpanInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([71, 230, 159, 123, 90, 231, 111, 104]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.BuyResale;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([74, 10, 248, 11, 211, 119, 3, 250]),
       ),
       0,
     )
   ) {
     return SpanInstruction.BuyRunning;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([38, 49, 232, 150, 255, 83, 91, 30]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.CloseResale;
   }
   if (
     containsBytes(
@@ -456,6 +545,17 @@ export function identifySpanInstruction(
     )
   ) {
     return SpanInstruction.Init;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([241, 79, 32, 48, 11, 99, 177, 194]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.ListResale;
   }
   if (
     containsBytes(
@@ -600,14 +700,23 @@ export type ParsedSpanInstruction<
 > =
   | ({ instructionType: SpanInstruction.Buy } & ParsedBuyInstruction<TProgram>)
   | ({
+      instructionType: SpanInstruction.BuyResale;
+    } & ParsedBuyResaleInstruction<TProgram>)
+  | ({
       instructionType: SpanInstruction.BuyRunning;
     } & ParsedBuyRunningInstruction<TProgram>)
+  | ({
+      instructionType: SpanInstruction.CloseResale;
+    } & ParsedCloseResaleInstruction<TProgram>)
   | ({
       instructionType: SpanInstruction.CloseUntil;
     } & ParsedCloseUntilInstruction<TProgram>)
   | ({
       instructionType: SpanInstruction.Init;
     } & ParsedInitInstruction<TProgram>)
+  | ({
+      instructionType: SpanInstruction.ListResale;
+    } & ParsedListResaleInstruction<TProgram>)
   | ({
       instructionType: SpanInstruction.LoadSpan;
     } & ParsedLoadSpanInstruction<TProgram>)
@@ -657,11 +766,25 @@ export function parseSpanInstruction<TProgram extends string>(
         ...parseBuyInstruction(instruction),
       };
     }
+    case SpanInstruction.BuyResale: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.BuyResale,
+        ...parseBuyResaleInstruction(instruction),
+      };
+    }
     case SpanInstruction.BuyRunning: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: SpanInstruction.BuyRunning,
         ...parseBuyRunningInstruction(instruction),
+      };
+    }
+    case SpanInstruction.CloseResale: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.CloseResale,
+        ...parseCloseResaleInstruction(instruction),
       };
     }
     case SpanInstruction.CloseUntil: {
@@ -676,6 +799,13 @@ export function parseSpanInstruction<TProgram extends string>(
       return {
         instructionType: SpanInstruction.Init,
         ...parseInitInstruction(instruction),
+      };
+    }
+    case SpanInstruction.ListResale: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.ListResale,
+        ...parseListResaleInstruction(instruction),
       };
     }
     case SpanInstruction.LoadSpan: {
@@ -784,6 +914,8 @@ export type SpanPluginAccounts = {
     SelfFetchFunctions<CandleArgs, Candle>;
   config: ReturnType<typeof getConfigCodec> &
     SelfFetchFunctions<ConfigArgs, Config>;
+  resale: ReturnType<typeof getResaleCodec> &
+    SelfFetchFunctions<ResaleArgs, Resale>;
   ticket: ReturnType<typeof getTicketCodec> &
     SelfFetchFunctions<TicketArgs, Ticket>;
   until: ReturnType<typeof getUntilCodec> &
@@ -794,16 +926,27 @@ export type SpanPluginInstructions = {
   buy: (
     input: BuyAsyncInput,
   ) => ReturnType<typeof getBuyInstructionAsync> & SelfPlanAndSendFunctions;
+  buyResale: (
+    input: BuyResaleAsyncInput,
+  ) => ReturnType<typeof getBuyResaleInstructionAsync> &
+    SelfPlanAndSendFunctions;
   buyRunning: (
     input: BuyRunningAsyncInput,
   ) => ReturnType<typeof getBuyRunningInstructionAsync> &
     SelfPlanAndSendFunctions;
+  closeResale: (
+    input: CloseResaleInput,
+  ) => ReturnType<typeof getCloseResaleInstruction> & SelfPlanAndSendFunctions;
   closeUntil: (
     input: CloseUntilInput,
   ) => ReturnType<typeof getCloseUntilInstruction> & SelfPlanAndSendFunctions;
   init: (
     input: InitAsyncInput,
   ) => ReturnType<typeof getInitInstructionAsync> & SelfPlanAndSendFunctions;
+  listResale: (
+    input: ListResaleAsyncInput,
+  ) => ReturnType<typeof getListResaleInstructionAsync> &
+    SelfPlanAndSendFunctions;
   loadSpan: (
     input: LoadSpanAsyncInput,
   ) => ReturnType<typeof getLoadSpanInstructionAsync> &
@@ -852,6 +995,7 @@ export type SpanPluginInstructions = {
 export type SpanPluginPdas = {
   config: typeof findConfigPda;
   vault: typeof findVaultPda;
+  resale: typeof findResalePda;
   until: typeof findUntilPda;
   candle: typeof findCandlePda;
   ticket: typeof findTicketPda;
@@ -873,16 +1017,27 @@ export function spanProgram() {
         accounts: {
           candle: addSelfFetchFunctions(client, getCandleCodec()),
           config: addSelfFetchFunctions(client, getConfigCodec()),
+          resale: addSelfFetchFunctions(client, getResaleCodec()),
           ticket: addSelfFetchFunctions(client, getTicketCodec()),
           until: addSelfFetchFunctions(client, getUntilCodec()),
         },
         instructions: {
           buy: (input) =>
             addSelfPlanAndSendFunctions(client, getBuyInstructionAsync(input)),
+          buyResale: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getBuyResaleInstructionAsync(input),
+            ),
           buyRunning: (input) =>
             addSelfPlanAndSendFunctions(
               client,
               getBuyRunningInstructionAsync(input),
+            ),
+          closeResale: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getCloseResaleInstruction(input),
             ),
           closeUntil: (input) =>
             addSelfPlanAndSendFunctions(
@@ -891,6 +1046,11 @@ export function spanProgram() {
             ),
           init: (input) =>
             addSelfPlanAndSendFunctions(client, getInitInstructionAsync(input)),
+          listResale: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getListResaleInstructionAsync(input),
+            ),
           loadSpan: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -952,6 +1112,7 @@ export function spanProgram() {
         pdas: {
           config: findConfigPda,
           vault: findVaultPda,
+          resale: findResalePda,
           until: findUntilPda,
           candle: findCandlePda,
           ticket: findTicketPda,

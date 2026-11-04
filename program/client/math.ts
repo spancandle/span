@@ -68,3 +68,19 @@ export function runningPrice(c: CandlePrices, t: TicketPrices, price: bigint) {
   const next = { ...t, tailHigh, tailLow };
   return { recorded: payout(c, next), ...highLow(c, next), tailHigh, tailLow };
 }
+
+/** Resales price only the range already recorded by the ticket. */
+export function resaleRecorded(c: CandlePrices, t: TicketPrices): bigint {
+  if (!c.reads[0].price) throw new RangeError("NoOpen");
+  return payout(c, t);
+}
+
+/** Whether a vacant reading can still absorb an observation already on chain. */
+export function readPending(c: CandlePrices, now: bigint, feed: {price: bigint; publishTs: bigint} | null): boolean {
+  const elapsed = now - c.t0, j = elapsed / 300n;
+  if (elapsed >= 0n && j <= 12n && !c.reads[Number(j)].price &&
+      now <= boundary(c.t0, Number(j)) + BigInt(c.readWindow + c.ageLimit)) return true;
+  return feed !== null && c.reads.some((r, k) => k >= 1 && k <= 12 && !r.price &&
+    feed.publishTs >= boundary(c.t0, k) && feed.publishTs <= boundary(c.t0, k) + BigInt(c.readWindow) &&
+    now - feed.publishTs <= BigInt(c.ageLimit));
+}

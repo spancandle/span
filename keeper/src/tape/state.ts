@@ -5,10 +5,12 @@ import {
   TicketState,
   settleAfter,
   type Candle,
+  type Ticket,
 } from "../../../program/client/index.js";
-import { spanHeld, type Chain } from "../keeper/chain.js";
+import { spanHeld, type Chain, type SpanHoldRead } from "../keeper/chain.js";
 import type { RpcPool } from "../common/rpc.js";
 import type { History } from "./history.js";
+import {resaleEventsOf,transfersOf} from './transfers.js';
 // Mint decimals never change, so one successful read is kept for the process.
 export class SpanDecimals {
   private mint?: string;
@@ -79,6 +81,12 @@ export function markLog(history: History, ticket: string) {
 export function entryOf(history: History, ticket: string) {
   const e = history.events("BoughtRunning").find(x=>x.ticket===ticket);
   return e ? {sig:e.sig,at:e.blockTime,publishTs:e.publishTs,price:e.price,recorded:e.recorded,paid:e.paid} : null;
+}
+/** Without a holding read, only burns since the last transfer belong to the current load. */
+export function tapeSpanHeld(t:Pick<Ticket,'spanLoaded'|'burned'>,held:SpanHoldRead|undefined,transferBurned=0n){
+  if(held)return spanHeld(t,held);
+  const left=t.spanLoaded-(t.burned-transferBurned);
+  return left>0n?left:0n;
 }
 export function liveDocuments(
   chain: Chain,
@@ -164,6 +172,8 @@ export function liveDocuments(
         address,
         until: (()=>{const u=[...(chain.untils?.values() ?? [])].find(x=>x.value.ticket===address);return u?String(u.value.until):null;})(),
         entry: entryOf(history,address),
+        resale: (()=>{const offer=[...(chain.resales?.values()??[])].find(x=>x.value.ticket===address)?.value;return offer?{holder:offer.holder,ask:String(offer.ask),until:String(offer.until)}:null;})(),
+        transfers: transfersOf(history,address),
         asset: nameOf(assetOf(t.t0)),
         id: String(t.id),
         t0: String(t.t0),
@@ -173,7 +183,7 @@ export function liveDocuments(
         strikeBps: t.strikeBps,
         state: t.state === TicketState.Open ? "Open" : "Sold",
         spanLoaded: String(t.spanLoaded),
-        spanHeld: String(spanHeld(t, chain.spanHolds?.get(address))),
+        spanHeld: String(tapeSpanHeld(t, chain.spanHolds?.get(address),BigInt(resaleEventsOf(history,address).at(-1)?.burned??0))),
         stepBps: t.stepBps,
         marker: t.marker,
         tailHigh: String(t.tailHigh),

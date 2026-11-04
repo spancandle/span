@@ -2,7 +2,7 @@
   "address": "ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd",
   "metadata": {
     "name": "span",
-    "version": "1.13.0",
+    "version": "1.14.0",
     "spec": "0.1.0"
   },
   "instructions": [
@@ -129,6 +129,165 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "buy_resale",
+      "discriminator": [
+        71,
+        230,
+        159,
+        123,
+        90,
+        231,
+        111,
+        104
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "resale",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  97,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holder",
+          "writable": true
+        },
+        {
+          "name": "holder_usdc",
+          "writable": true
+        },
+        {
+          "name": "buyer",
+          "signer": true
+        },
+        {
+          "name": "buyer_source",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "span_mint",
+          "optional": true
+        },
+        {
+          "name": "span_hold",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "holder_span",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "span_token_program",
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_pay",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "buy_running",
@@ -284,6 +443,63 @@
       ]
     },
     {
+      "name": "close_resale",
+      "discriminator": [
+        38,
+        49,
+        232,
+        150,
+        255,
+        83,
+        91,
+        30
+      ],
+      "accounts": [
+        {
+          "name": "resale",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  97,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "resale.ticket",
+                "account": "Resale"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holder",
+          "writable": true
+        },
+        {
+          "name": "ticket"
+        },
+        {
+          "name": "closer",
+          "signer": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "close_until",
       "discriminator": [
         255,
@@ -421,6 +637,133 @@
         {
           "name": "buy_cutoff",
           "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "list_resale",
+      "discriminator": [
+        241,
+        79,
+        32,
+        48,
+        11,
+        99,
+        177,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "holder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "resale",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  97,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "ask",
+          "type": "u64"
+        },
+        {
+          "name": "until",
+          "type": "i64"
         }
       ]
     },
@@ -1715,6 +2058,19 @@
       ]
     },
     {
+      "name": "Resale",
+      "discriminator": [
+        46,
+        18,
+        189,
+        186,
+        7,
+        168,
+        153,
+        201
+      ]
+    },
+    {
       "name": "Ticket",
       "discriminator": [
         41,
@@ -1857,6 +2213,45 @@
         252,
         160,
         120
+      ]
+    },
+    {
+      "name": "ResaleClosed",
+      "discriminator": [
+        14,
+        111,
+        94,
+        1,
+        238,
+        73,
+        83,
+        36
+      ]
+    },
+    {
+      "name": "ResaleListed",
+      "discriminator": [
+        47,
+        254,
+        165,
+        92,
+        46,
+        59,
+        24,
+        78
+      ]
+    },
+    {
+      "name": "Resold",
+      "discriminator": [
+        0,
+        107,
+        237,
+        161,
+        251,
+        73,
+        29,
+        253
       ]
     },
     {
@@ -2127,6 +2522,14 @@
     {
       "code": 6043,
       "name": "PriceAboveMax"
+    },
+    {
+      "code": 6044,
+      "name": "NotHolder"
+    },
+    {
+      "code": 6045,
+      "name": "ReadPending"
     }
   ],
   "types": [
@@ -2575,6 +2978,166 @@
           },
           {
             "name": "read_low",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Resale",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "holder",
+            "type": "pubkey"
+          },
+          {
+            "name": "ask",
+            "type": "u64"
+          },
+          {
+            "name": "until",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ResaleClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "resale",
+            "type": "pubkey"
+          },
+          {
+            "name": "holder",
+            "type": "pubkey"
+          },
+          {
+            "name": "closer",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ResaleListed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "holder",
+            "type": "pubkey"
+          },
+          {
+            "name": "ask",
+            "type": "u64"
+          },
+          {
+            "name": "until",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Resold",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "from",
+            "type": "pubkey"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "ask",
+            "type": "u64"
+          },
+          {
+            "name": "recorded",
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          },
+          {
+            "name": "high",
+            "type": "u64"
+          },
+          {
+            "name": "low",
+            "type": "u64"
+          },
+          {
+            "name": "tail_high",
+            "type": "u64"
+          },
+          {
+            "name": "tail_low",
+            "type": "u64"
+          },
+          {
+            "name": "reads",
+            "type": "u16"
+          },
+          {
+            "name": "marks",
+            "type": "u32"
+          },
+          {
+            "name": "burned",
+            "type": "u64"
+          },
+          {
+            "name": "span_returned",
+            "type": "u64"
+          },
+          {
+            "name": "slot",
             "type": "u64"
           }
         ]

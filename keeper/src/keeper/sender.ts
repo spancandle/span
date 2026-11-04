@@ -19,11 +19,12 @@ import { log, type Logger } from "../common/log.js";
 import type { FeedValue } from "../common/feed.js";
 export type Action = {
   key: string;
-  kind: "open" | "read" | "mark" | "settle" | "closeUntil";
+  kind: "open" | "read" | "mark" | "settle" | "closeUntil" | "closeResale";
   t0: bigint;
   j?: number;
   ticket?: string;
   until?: string;
+  resale?: string;
   end?: bigint;
 };
 export type Prepared = {
@@ -68,7 +69,7 @@ export async function prepareTransaction(
   rent = 0n,
 ): Promise<Prepared> {
   const limit =
-    action.kind === "closeUntil"
+    (action.kind === "closeUntil" || action.kind === "closeResale")
       ? 20000
       : action.kind === "open"
       ? 40000
@@ -205,7 +206,7 @@ export class Sender {
             maxRetries: 0,
           },
         ],
-        f.p.action.kind === "settle" || f.p.action.kind === "closeUntil" ? "normal" : "window",
+        f.p.action.kind === "settle" || f.p.action.kind === "closeUntil" || f.p.action.kind === "closeResale" ? "normal" : "window",
       );
       if (this.flights.get(f.p.action.key) !== f) return;
       if (v.value !== f.p.signature) throw Error("RPC signature mismatch");

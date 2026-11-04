@@ -392,3 +392,73 @@ pub struct CloseUntil<'info> {
     pub ticket: UncheckedAccount<'info>,
     pub closer: Signer<'info>,
 }
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct ListResale<'info> {
+    #[account(mut)]
+    pub holder: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(seeds = [b"ticket", &ticket.id.to_le_bytes()], bump = ticket.bump,
+        constraint = ticket.t0 == candle.t0 @ SpanError::InvalidValue)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(init_if_needed, payer = holder, space = 8 + Resale::INIT_SPACE,
+        seeds = [b"resale", ticket.key().as_ref()], bump)]
+    pub resale: Box<Account<'info, Resale>>,
+    pub system_program: Program<'info, System>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct BuyResale<'info> {
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(mut, seeds = [b"ticket", &ticket.id.to_le_bytes()], bump = ticket.bump,
+        constraint = ticket.t0 == candle.t0 @ SpanError::InvalidValue)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(mut, close = holder, seeds = [b"resale", ticket.key().as_ref()], bump = resale.bump,
+        constraint = resale.ticket == ticket.key() @ SpanError::InvalidValue)]
+    pub resale: Box<Account<'info, Resale>>,
+    /// CHECK: stored offer owner receives payment and account rent.
+    #[account(mut, address = resale.holder @ SpanError::ReceiverMismatch)]
+    pub holder: UncheckedAccount<'info>,
+    #[account(mut, dup, constraint = holder_usdc.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = holder_usdc.owner == resale.holder @ SpanError::WrongOwner)]
+    pub holder_usdc: Box<Account<'info, UsdcAccount>>,
+    pub buyer: Signer<'info>,
+    #[account(mut, constraint = buyer_source.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = buyer_source.owner == buyer.key() @ SpanError::WrongOwner)]
+    pub buyer_source: Box<Account<'info, UsdcAccount>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    /// CHECK: address and oracle layout are validated by the instruction.
+    pub feed: UncheckedAccount<'info>,
+    #[account(address = config.span_mint.ok_or(SpanError::SpanNotSet)? @ SpanError::WrongMint)]
+    pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
+    #[account(mut)]
+    pub span_hold: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    #[account(mut, dup)]
+    pub holder_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    #[account(address = config.span_token_program.ok_or(SpanError::SpanNotSet)? @ SpanError::UnsupportedTokenProgram)]
+    pub span_token_program: Option<Interface<'info, TokenInterface>>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct CloseResale<'info> {
+    #[account(mut, close = holder, seeds = [b"resale", resale.ticket.as_ref()], bump = resale.bump)]
+    pub resale: Box<Account<'info, Resale>>,
+    /// CHECK: bound to the stored rent recipient.
+    #[account(mut, address = resale.holder @ SpanError::ReceiverMismatch)]
+    pub holder: UncheckedAccount<'info>,
+    /// CHECK: bound address; owner and data select the authority check.
+    #[account(address = resale.ticket @ SpanError::InvalidValue)]
+    pub ticket: UncheckedAccount<'info>,
+    pub closer: Signer<'info>,
+}

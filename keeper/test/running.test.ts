@@ -91,7 +91,7 @@ for(const markAfterEntry of [false,true])it(`production decisions and tape handl
 it.skipIf(!process.env.SPAN_PREVIOUS_KEEPER)('keeps every old public value on a 1.12.0 state, adding only null until and entry',async()=>{
  const h=await Harness.create({binary:process.env.SPAN_PREVIOUS_BINARY,setSpan:true}),t=await h.open({loaded:true}),chain={rpc:{cluster:'mainnet'},config:h.configState(),candles:new Map([[t.candle,{value:h.candleState(t),slot:1,data:''}]]),tickets:new Map([[t.ticket,{value:h.ticketState(t),slot:1,data:''}]]),untils:new Map(),now:()=>1300n,slot:1} as unknown as Chain;
  const history={events:()=>[]} as any,old=await import(pathToFileURL(resolve(process.env.SPAN_PREVIOUS_KEEPER!,'src/tape/state.ts')).href);vi.spyOn(Date,'now').mockReturnValue(1800000000000);
- try{const before=old.liveDocuments(chain,history),after=liveDocuments(chain,history);for(const row of after.tickets.tickets){expect(row.until).toBe(null);expect(row.entry).toBe(null);delete(row as any).until;delete(row as any).entry;}expect(after).toEqual(before);
+ try{const before=old.liveDocuments(chain,history),after=liveDocuments(chain,history);for(const row of after.tickets.tickets){expect(row.until).toBe(null);expect(row.entry).toBe(null);delete(row as any).until;delete(row as any).entry;expect(row.resale).toBe(null);expect(row.transfers).toEqual([]);delete(row as any).resale;delete(row as any).transfers;}expect(after).toEqual(before);
   const dir=mkdtempSync(join(tmpdir(),'span-legacy-publish-')),store=new Store(':memory:'),archive=new History(store,{cluster:'mainnet'} as any,()=>{}),recorder=new DovesRecorder(store,{cluster:'mainnet'} as any),oldModule=await import(pathToFileURL(resolve(process.env.SPAN_PREVIOUS_KEEPER!,'src/tape/publish.ts')).href);
   try{
    h.clock(t.t0);h.price(P0,t.t0);archive.ingest('old-read',await driver(h,[h.readIx(t,0)]));h.clock(t.t0+30n);h.price(P0*101n/100n,t.t0+30n);archive.ingest('old-mark',await driver(h,[h.markIx(t)],h.marker));chain.candles.set(t.candle,{value:h.candleState(t),slot:1,data:''});chain.tickets.set(t.ticket,{value:h.ticketState(t),slot:1,data:''});
@@ -99,7 +99,7 @@ it.skipIf(!process.env.SPAN_PREVIOUS_KEEPER)('keeps every old public value on a 
    recorder.startRecording(Number(t.t0)-120);recorder.sample('old-price',P0,t.t0,1);recorder.sample('old-high',P0*101n/100n,t.t0+30n,2);recorder.closeGaps();recorder.cover(Number(t.t0)+3720);
    const baseline=new oldModule.Publisher(store,chain,archive,recorder,join(dir,'before')),current=new Publisher(store,chain,archive,recorder,join(dir,'after'));
    expect(current.feedDocument()).toEqual(baseline.feedDocument());expect(current.hoursDocument()).toEqual(baseline.hoursDocument());expect(current.candlePathBody(Number(t.t0))).toEqual(baseline.candlePathBody(Number(t.t0)));
-   const beforeBook=baseline.historyDocument(),afterBook=current.historyDocument();for(const receipt of afterBook.receipts){expect(receipt.entry).toBe(null);delete receipt.entry;}expect(afterBook).toEqual(beforeBook);
+   const beforeBook=baseline.historyDocument(),afterBook=current.historyDocument();for(const receipt of afterBook.receipts){expect(receipt.entry).toBe(null);delete receipt.entry;expect(receipt.transfers).toEqual([]);delete receipt.transfers;}expect(afterBook).toEqual(beforeBook);
   }finally{store.close();}
  }finally{vi.restoreAllMocks();}
 });

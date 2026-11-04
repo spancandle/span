@@ -55,3 +55,25 @@ pub fn read(a: &AccountInfo<'_>, now: i64, age_limit: u16, asset: u8) -> Result<
     );
     Ok(Price { price, publish_ts })
 }
+
+pub fn peek(a: &AccountInfo<'_>, asset: u8) -> Result<Price> {
+    let mut owner_ok = *a.owner == DOVES;
+    #[cfg(feature = "devnet")]
+    {
+        owner_ok |= *a.owner == crate::ID
+            && a.key() == dev_feed_of(asset);
+    }
+    let _ = &mut owner_ok;
+    require!(owner_ok, SpanError::FeedInvalid);
+    let d = a.try_borrow_data()?;
+    require!(
+        d.len() == 394 && d[..8] == DISC && d[176] == 248,
+        SpanError::FeedInvalid
+    );
+    require!(d[8..40] == mint_of(asset)?.to_bytes(), SpanError::FeedAssetMismatch);
+    let price = u64::from_le_bytes(d[168..176].try_into().map_err(|_| SpanError::FeedInvalid)?);
+    let publish_ts =
+        i64::from_le_bytes(d[177..185].try_into().map_err(|_| SpanError::FeedInvalid)?);
+    require!(price > 0, SpanError::FeedInvalid);
+    Ok(Price { price, publish_ts })
+}

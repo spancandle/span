@@ -90,3 +90,13 @@ pub struct Until {
     pub until: i64,
     pub bump: u8,
 }
+
+#[account]
+#[derive(InitSpace)]
+pub struct Resale {
+    pub ticket: Pubkey,
+    pub holder: Pubkey,
+    pub ask: u64,
+    pub until: i64,
+    pub bump: u8,
+}

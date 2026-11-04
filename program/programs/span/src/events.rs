@@ -175,3 +175,40 @@ pub struct UntilClosed {
     pub until: Pubkey,
     pub closer: Pubkey,
 }
+
+#[event]
+pub struct ResaleListed {
+    pub ticket: Pubkey,
+    pub id: u64,
+    pub t0: i64,
+    pub holder: Pubkey,
+    pub ask: u64,
+    pub until: i64,
+}
+#[event]
+pub struct Resold {
+    pub ticket: Pubkey,
+    pub id: u64,
+    pub t0: i64,
+    pub from: Pubkey,
+    pub to: Pubkey,
+    pub ask: u64,
+    pub recorded: u64,
+    pub paid: u64,
+    pub high: u64,
+    pub low: u64,
+    pub tail_high: u64,
+    pub tail_low: u64,
+    pub reads: u16,
+    pub marks: u32,
+    pub burned: u64,
+    pub span_returned: u64,
+    pub slot: u64,
+}
+#[event]
+pub struct ResaleClosed {
+    pub ticket: Pubkey,
+    pub resale: Pubkey,
+    pub holder: Pubkey,
+    pub closer: Pubkey,
+}

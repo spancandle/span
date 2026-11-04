@@ -29,6 +29,15 @@ export async function createPrepare(
   return async (a: Action, fee: bigint) => {
     const hash = latest();
     if (!hash) throw Error("Preparation unavailable");
+    if (a.kind === "closeResale") {
+      const key=address(a.resale!),value=chain.resales.get(key)?.value;
+      if (!value) throw Error("Resale closed");
+      const observed=await rpc.call("getAccountInfo",[value.ticket,{encoding:"base64",commitment:"confirmed"}]);
+      if (observed?.value !== null) throw Error("Ticket still present");
+      const ix=s.getCloseResaleInstruction({resale:key,ticket:value.ticket,holder:value.holder,closer:payer,eventAuthority,program:s.SPAN_PROGRAM_ADDRESS});
+      priorities.register(a.key,[ix],payer.address);
+      return prepareTransaction([ix],payer,hash,a,fee);
+    }
     if (a.kind === "closeUntil") {
       const key = address(a.until!), value = chain.untils.get(key)?.value;
       if (!value) throw Error("Until closed");

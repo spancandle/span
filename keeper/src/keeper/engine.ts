@@ -42,7 +42,7 @@ export class Engine {
     readonly chain: Pick<
       Chain,
       "candles" | "tickets" | "config" | "feed" | "now"
-    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils">>,
+    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils" | "resales">>,
     readonly keeper: Address,
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
@@ -188,6 +188,14 @@ export class Engine {
     for (const [until, {value}] of this.chain.untils ?? [])
       if (!this.chain.tickets.has(value.ticket))
         out.push({key:`closeUntil:${until}`,kind:"closeUntil",until,t0:0n});
+    for (const [resale,{value}] of this.chain.resales ?? [])
+      if (!this.chain.tickets.has(value.ticket))
+        out.push({key:`closeResale:${resale}`,kind:"closeResale",resale,t0:0n});
+    for (const [key,p] of [...this.pending,...this.prepared])
+      if (p.action.kind === "closeResale") {
+        const value = this.chain.resales?.get(p.action.resale as Address)?.value;
+        if (!value || this.chain.tickets.has(value.ticket)) this.complete(key);
+      }
     for (const [key,p] of [...this.pending,...this.prepared])
       if (p.action.kind === "closeUntil") {
         const value = this.chain.untils?.get(p.action.until as Address)?.value;
@@ -246,6 +254,10 @@ export class Engine {
     return false;
   }
   private eligible(a: Action) {
+    if (a.kind === "closeResale") {
+      const value=this.chain.resales?.get(a.resale as Address)?.value;
+      return !!value && !this.chain.tickets.has(value.ticket);
+    }
     if (a.kind === "closeUntil") {
       const value = this.chain.untils?.get(a.until as Address)?.value;
       return !!value && !this.chain.tickets.has(value.ticket);
@@ -275,6 +287,7 @@ export class Engine {
     if (this.closed) return;
     const actions = this.actions();
     for (const a of actions) {
+        if (a.kind === "closeResale") continue;
         if (a.kind === "closeUntil") continue;
         const v=this.feed(a.t0);
         if (a.kind !== "mark" || !v) continue;
@@ -305,7 +318,7 @@ export class Engine {
         }
       }
     for (const a of actions) {
-      const v=a.kind === "closeUntil" ? undefined : this.feed(a.t0);
+      const v=a.kind === "closeResale" ? undefined : a.kind === "closeUntil" ? undefined : this.feed(a.t0);
       if (a.kind === "read" && v) {
         const b = boundary(a.t0, a.j!),
           c = this.candle(a);
@@ -386,7 +399,7 @@ export class Engine {
       if (error === "BuyClosed") this.abandoned.add(p.action.key);
       this.next.set(p.action.key, Date.now() + 2000);
     }
-    if (p.action.kind === "settle" || p.action.kind === "closeUntil")
+    if (p.action.kind === "settle" || p.action.kind === "closeUntil" || p.action.kind === "closeResale")
       this.next.set(p.action.key, Date.now() + 2000);
     if (error === "AlreadyProcessed") {
       if (p.action.kind === "mark") this.marked.delete(p.action.key);

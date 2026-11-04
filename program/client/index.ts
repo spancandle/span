@@ -7,6 +7,7 @@ export {
   findSpanHoldPda,
   findEventAuthorityPda,
   findUntilPda,
+  findResalePda,
 } from "./pdas.js";
 export * from "./math.js";
 export * from "./oracle.js";

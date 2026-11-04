@@ -23,6 +23,9 @@ const decoders = {
   UntilSet: generated.getUntilSetEventDecoder(),
   BoughtRunning: generated.getBoughtRunningEventDecoder(),
   UntilClosed: generated.getUntilClosedEventDecoder(),
+  ResaleListed: generated.getResaleListedEventDecoder(),
+  Resold: generated.getResoldEventDecoder(),
+  ResaleClosed: generated.getResaleClosedEventDecoder(),
 };
 export type DecodedSpanEvent = {
   [K in keyof typeof decoders]: {

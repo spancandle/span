@@ -8,5 +8,6 @@
 
 export * from "./candle.js";
 export * from "./config.js";
+export * from "./resale.js";
 export * from "./ticket.js";
 export * from "./until.js";
