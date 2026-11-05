@@ -10,7 +10,7 @@ import {
 } from "@solana/kit";
 import { findAssociatedTokenPda, getTokenDecoder, AccountState } from "@solana-program/token";
 import * as s from "../../../program/client/index.js";
-import { ASSETS, assetOf, feedOf, type Asset } from "../../../program/client/assets.js";
+import { ASSETS, assetOf, secsOf, feedOf, type Asset } from "../../../program/client/assets.js";
 import { TOKEN, TOKEN_2022 } from "../../../program/client/constants.js";
 import { getTokenSize } from "@solana-program/token-2022";
 import { RpcPool, type Mode } from "../common/rpc.js";
@@ -105,7 +105,7 @@ export class Chain {
   recording(asset?: Asset) {
     const now = this.now();
     return [...this.candles.values()].some(
-      ({ value: c }) => (asset === undefined || assetOf(c.t0) === asset) && now >= c.t0 - 120n && now <= c.t0 + 3720n,
+      ({ value: c }) => (asset === undefined || assetOf(c.t0) === asset) && now >= c.t0 - 120n && now <= c.t0 + secsOf(c.t0) + 120n,
     );
   }
   setSlot(slot: number) {
@@ -238,7 +238,7 @@ export class Chain {
       if (role === "tape") return true;
       const c = [...this.candles.values()].find(x => x.value.t0 === t.t0)?.value;
       return t.marker === this.keeper && !!c && now >= t.t0 &&
-        now <= t.t0 + 3600n + BigInt(c.ageLimit);
+        now <= t.t0 + secsOf(t.t0) + BigInt(c.ageLimit);
     };
     const keys = mint && (program === TOKEN || program === TOKEN_2022)
       ? [...this.tickets.keys()].filter(eligible) : [];

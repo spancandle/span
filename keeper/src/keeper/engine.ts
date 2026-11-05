@@ -7,7 +7,7 @@ import {
   type Candle,
   type Ticket,
 } from "../../../program/client/index.js";
-import { assetOf } from "../../../program/client/assets.js";
+import { assetOf,secsOf,lastReadOf } from "../../../program/client/assets.js";
 import { spanHeld, type Chain } from "./chain.js";
 import type { FeedValue } from "../common/feed.js";
 import type { Action, Prepared } from "./sender.js";
@@ -90,7 +90,7 @@ export class Engine {
           ![...this.chain.tickets.values()].some((x) => x.value.t0 === c.t0))
         continue;
       const feed = this.feed(c.t0);
-      for (let j = 0; j < 13; j++) {
+      for (let j = 0; j <= lastReadOf(c.t0); j++) {
         const k = `read:${key}:${j}`,
           b = boundary(c.t0, j);
         if (c.reads[j].price > 0n) {
@@ -182,7 +182,7 @@ export class Engine {
           kind: "mark",
           ticket: key,
           t0: t.t0,
-          end: c.t0 + 3600n + BigInt(c.ageLimit) + 2n,
+          end: c.t0 + secsOf(c.t0) + BigInt(c.ageLimit) + 2n,
         });
     }
     for (const [until, {value}] of this.chain.untils ?? [])
@@ -239,7 +239,7 @@ export class Engine {
       .value;
   }
   private hold(c: Candle, v: FeedValue) {
-    for (let j = 0; j < 13; j++) {
+    for (let j = 0; j <= lastReadOf(c.t0); j++) {
       const b = boundary(c.t0, j),
         key = `read:${[...this.chain.candles].find((x) => x[1].value.t0 === c.t0)![0]}:${j}`;
       if (
@@ -276,7 +276,7 @@ export class Engine {
     if (
       !t ||
       v.publishTs <= t.t0 ||
-      v.publishTs > t.t0 + 3600n ||
+      v.publishTs > t.t0 + secsOf(t.t0) ||
       this.hold(c, v)
     )
       return false;
@@ -295,7 +295,7 @@ export class Engine {
           c = this.candle(a);
         if (
           v.publishTs <= t.t0 ||
-          v.publishTs > t.t0 + 3600n ||
+          v.publishTs > t.t0 + secsOf(t.t0) ||
           !markAccepts(c, t, v.price).accepted
         )
           continue;

@@ -14,9 +14,9 @@
 
 A US release moves SOL in the hour after the print, and the move can come back before the hour is out. A perp settles that hour on its body, open to close. span settles it on the candle, from the top of the upper wick to the bottom of the lower one.
 
-A candle is 60 minutes. Its start second names its asset: a SOL candle starts on a minute, a BTC candle one second after it and an ETH candle two seconds after. The site lists one for every scheduled CPI, PPI, jobs and GDP print (08:30 ET) and FOMC decision (14:00 ET), starting one minute before it. A seller opens a ticket with a length, 0 to 5% in 0.25% steps, and puts 40 USDC less the premium into its vault. A buyer pays the premium, 0.10 to 39 USDC. At the close the buyer receives 10 USDC for every 1% of candle past the length, up to the 40 USDC in the vault, and the seller receives the rest. Which way the hour went and where it closed do not enter the payout.
+A candle is 60 or 30 minutes, and its start second names its asset and its length: a 60-minute SOL candle starts on a minute, BTC one second after it and ETH two seconds after; a 30-minute candle starts three, four or five seconds after the minute for SOL, BTC or ETH. The site lists one for every scheduled CPI, PPI, jobs and GDP print (08:30 ET) and FOMC decision (14:00 ET), starting one minute before it. A seller opens a ticket with a length, 0 to 5% in 0.25% steps, and puts 40 USDC less the premium into its vault. A buyer pays the premium, 0.10 to 39 USDC. At the close the buyer receives 10 USDC for every 1% of candle past the length, up to the 40 USDC in the vault, and the seller receives the rest. Which way the hour went and where it closed do not enter the payout.
 
-Thirteen scheduled reads, one every 300 seconds, draw the candle anyone can record. The part of a long candle past a ticket's length is usually a wick that reached out between two reads right after the print and came back before the next one. A ticket that carries SPAN names a reader who records each new high or low as it happens: one transaction, one slot, one wick. A record that raises the payout burns a fixed amount of SPAN; a record that does not burns nothing. A recorded wick never shrinks.
+Scheduled reads, one every 300 seconds, thirteen on a 60-minute candle and seven on a 30-minute one, draw the candle anyone can record. The part of a long candle past a ticket's length is usually a wick that reached out between two reads right after the print and came back before the next one. A ticket that carries SPAN names a reader who records each new high or low as it happens: one transaction, one slot, one wick. A record that raises the payout burns a fixed amount of SPAN; a record that does not burns nothing. A recorded wick never shrinks.
 
 Program: `ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd`.
 
@@ -86,7 +86,7 @@ t0 + 300·j        read j   j = 1…12, published within 20 s, at most 20 s old
 t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buyer
 ```
 
-`t0` is the candle's start. Anyone may send a read. A read that misses its window stays empty and adds no price. Without the open, the buyer gets the premium back and the seller the collateral. An unsold ticket returns the collateral. The times use the default Config, a 20-second read window, a 20-second age limit and a 5-second buying cutoff, which each candle copies when it opens.
+`t0` is the candle's start. Anyone may send a read. A read that misses its window stays empty and adds no price. Without the open, the buyer gets the premium back and the seller the collateral. An unsold ticket returns the collateral. The times use the default Config, a 20-second read window, a 20-second age limit and a 5-second buying cutoff, which each candle copies when it opens. A 30-minute candle runs the same way to `t0 + 1800`: reads 0…6, the last at its end and published within the same window, marks published through `t0 + 1800`, and settlement from `t0 + 1841`.
 
 ## Accounts
 
@@ -108,7 +108,7 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | set_span | SpanSet | Choose the mint and burn amount once; admin only |
 | set_feed | FeedSet | Change the validated SOL oracle; admin only |
 | set_params | ParamsSet | Change timing for future candles; admin only |
-| open_candle | CandleOpened | Open a candle on a minute (SOL), or one or two seconds after it (BTC, ETH) |
+| open_candle | CandleOpened | Open a 60-minute candle on a minute (SOL), or one or two seconds after it (BTC, ETH); three to five seconds after it, a 30-minute candle |
 | open_ticket | TicketOpened | Deposit 40 minus premium USDC and set the length |
 | open_running | TicketOpened, UntilSet | Open a ticket that stays for sale after its hour starts, until a time the seller sets |
 | withdraw | Withdrawn | Return collateral while the ticket remains unsold; seller only |
@@ -124,19 +124,19 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | buy_resale | Resold | After the opening reading, pay the holder what the candle has recorded plus their price, up to a stated maximum, and become the ticket's buyer |
 | close_resale | ResaleClosed | Withdraw an offer (holder), or return the account's rent once the ticket is closed (anyone) |
 
-First loading and reader changes are allowed through `t0 + 3600 + age_limit`, inclusive. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. A resale returns the holder's SPAN and clears the reader; the recorded tails, mark count and burned amount stay with the ticket. Buying and selling still close at the buying cutoff, except for a ticket opened with `open_running`.
+First loading and reader changes are allowed through the candle's end plus `age_limit`, inclusive: `t0 + 3600 + age_limit`, or `t0 + 1800 + age_limit` on a 30-minute candle. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. A resale returns the holder's SPAN and clears the reader; the recorded tails, mark count and burned amount stay with the ticket. Buying and selling still close at the buying cutoff, except for a ticket opened with `open_running`.
 
 ## Buying inside the hour
 
-A ticket opened with `open_running` stays for sale after its hour starts, until the time its seller set, at most start plus 3,600 seconds. Before the cutoff it is bought with `buy` at its premium. After the opening reading, `buy_running` reads the current DOVES price with the same checks as `mark` and computes A, the payout of the high and low so far with that price included. The buyer pays A plus the premium. If the price extends the high or low, it is kept as the ticket's tail without burning SPAN, so the final payout cannot fall below A. A ticket with A at 40 USDC is not sold.
+A ticket opened with `open_running` stays for sale after its hour starts, until the time its seller set, at most the candle's end, start plus 3,600 or 1,800 seconds. Before the cutoff it is bought with `buy` at its premium. After the opening reading, `buy_running` reads the current DOVES price with the same checks as `mark` and computes A, the payout of the high and low so far with that price included. The buyer pays A plus the premium. If the price extends the high or low, it is kept as the ticket's tail without burning SPAN, so the final payout cannot fall below A. A ticket with A at 40 USDC is not sold.
 
 ## Selling a ticket inside the hour
 
-A ticket's buyer can offer it with `list_resale` at a price, 0.10 to 39 USDC, until a time no later than start plus 3,600 seconds. After the opening reading, `buy_resale` computes A, the payout of the high and low recorded so far, without reading a new price, and the new buyer pays A plus that price straight to the holder. The vault does not move, so the seller's side is unchanged, and since a recorded high or low never shrinks, the final payout cannot fall below A. The holder's unburned SPAN and the rent of its holding account go back to the holder. A resale records no price, so a wick enters the ticket only through a read or a mark. It waits while a scheduled read can still be filled, from its open window or from the price already in the DOVES account; the buyer can send that read first in the same transaction. A ticket with A at 40 USDC is not resold.
+A ticket's buyer can offer it with `list_resale` at a price, 0.10 to 39 USDC, until a time no later than the candle's end. After the opening reading, `buy_resale` computes A, the payout of the high and low recorded so far, without reading a new price, and the new buyer pays A plus that price straight to the holder. The vault does not move, so the seller's side is unchanged, and since a recorded high or low never shrinks, the final payout cannot fall below A. The holder's unburned SPAN and the rent of its holding account go back to the holder. A resale records no price, so a wick enters the ticket only through a read or a mark. It waits while a scheduled read can still be filled, from its open window or from the price already in the DOVES account; the buyer can send that read first in the same transaction. A ticket with A at 40 USDC is not resold.
 
 ## Settlement
 
-Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. Settlement is available after start plus 3,600 seconds, the read window, the age limit and one second.
+Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. Settlement is available after the candle's end, the read window, the age limit and one second.
 
 ## Authority
 

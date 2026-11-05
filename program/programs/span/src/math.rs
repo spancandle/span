@@ -41,3 +41,11 @@ pub fn extends(price: u64, high: u64, low: u64, p0: u64, step: u16) -> Result<Op
         Ok(None)
     }
 }
+
+/// Asset, duration in seconds and final scheduled reading encoded by a start.
+pub fn window(t0: i64) -> Result<(u8, i64, u8)> {
+    let second = t0.rem_euclid(60);
+    require!(second < 6, SpanError::InvalidValue);
+    let secs = if second < 3 { 3600 } else { 1800 };
+    Ok(((second % 3) as u8, secs, (secs / 300) as u8))
+}

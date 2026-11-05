@@ -1,3 +1,4 @@
+import {secsOf} from "../../../program/client/assets.js";
 import { createServer } from "node:http";
 import { writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -14,7 +15,7 @@ export function atomicText(dir: string, name: string, text: string) {
 export function atomicFile(dir: string, name: string, value: unknown) {
   atomicText(dir, name, json(value) + "\n");
 }
-const CANDLE = /^\/candles\/[0-9]{1,12}\.json$/;
+const CANDLE = /^\/(v2\/)?candles\/([0-9]{1,12})\.json$/;
 export function httpServer(
   dir: string,
   read: (path: string) => Promise<Buffer> = readFile,
@@ -41,10 +42,20 @@ export function httpServer(
       res.end();
       return;
     }
-    const candle = CANDLE.test(path);
+    const match=CANDLE.exec(path),candle=!!match;
+    if(match){
+      let supported=false;
+      try{const secs=secsOf(BigInt(match[2]));supported=!!match[1]||secs===3600n;}catch{}
+      if(!supported){res.writeHead(404,{"access-control-allow-origin":"*","cache-control":"public, max-age=2"});res.end();return;}
+    }
     if (
       !candle &&
       ![
+        "/v2/state.json",
+        "/v2/tickets.json",
+        "/v2/feed.json",
+        "/v2/history.json",
+        "/v2/hours.json",
         "/state.json",
         "/tickets.json",
         "/feed.json",
@@ -59,7 +70,7 @@ export function httpServer(
       return;
     }
     // Candle paths share one counter so probes cannot grow the table.
-    const key = candle ? "/candles/" : path;
+    const key = candle ? (match![1]?"/v2/candles/":"/candles/") : path;
     totals[key] = (totals[key] ?? 0) + 1;
     const event = { at: Date.now(), path: key, unavailable: false };
     events.push(event);
@@ -100,7 +111,7 @@ export function httpServer(
     const headers = {
       "content-type": "application/json; charset=utf-8",
       "access-control-allow-origin": "*",
-      "cache-control": ["/state.json", "/feed.json", "/chain.json"].includes(
+      "cache-control": ["/state.json", "/feed.json", "/chain.json", "/v2/state.json", "/v2/feed.json"].includes(
         path,
       )
         ? "public, max-age=1"

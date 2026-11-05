@@ -303,9 +303,9 @@ describe("P3 P4 P5 sale and account creation", () => {
       "bad_t0",
       h.openCandleIx({
         ...t,
-        t0: 1203n,
+        t0: 1206n,
         candle: (
-          await import("../client/pdas.js").then((x) => x.findCandlePda(1203n))
+          await import("../client/pdas.js").then((x) => x.findCandlePda(1206n))
         )[0],
       }),
       h.stranger,

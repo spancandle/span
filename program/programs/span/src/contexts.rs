@@ -374,7 +374,7 @@ pub struct BuyRunning<'info> {
 pub fn running_ticket_space(gate: &TicketGate, id: u64, until: i64) -> Result<usize> {
     require_eq!(id, gate.config.next_ticket_id, SpanError::IdMismatch);
     let cutoff = gate.candle.t0.checked_sub(i64::from(gate.candle.buy_cutoff)).ok_or(SpanError::Overflow)?;
-    require!(until > cutoff && until <= crate::math::add_time(gate.candle.t0, 3600)?, SpanError::InvalidValue);
+    require!(until > cutoff && until <= crate::math::add_time(gate.candle.t0, crate::math::window(gate.candle.t0)?.1)?, SpanError::InvalidValue);
     require!(Clock::get()?.unix_timestamp < until, SpanError::BuyClosed);
     Ok(8 + Ticket::INIT_SPACE)
 }

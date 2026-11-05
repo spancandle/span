@@ -101,7 +101,9 @@ export function keeperAssets(value=process.env.KEEPER_ASSETS??'SOL'): Asset[] {
   if(!names.length||names.some(n=>!ASSETS.includes(n as any)))throw Error('Invalid KEEPER_ASSETS');
   return [...new Set(names.map(n=>ASSETS.indexOf(n as any) as Asset))];
 }
-export const releaseStarts=(hours:readonly bigint[],assets:readonly Asset[])=>hours.flatMap(t0=>assets.map(a=>t0+BigInt(a)));
+export const halfHoursEnabled=()=>process.env.KEEPER_HALF_HOURS==='1';
+export const releaseStarts=(hours:readonly bigint[],assets:readonly Asset[],half=halfHoursEnabled())=>hours.flatMap(t0=>assets.flatMap(a=>half?[t0+BigInt(a),t0+3n+BigInt(a)]:[t0+BigInt(a)]));
+export const listedStarts=(hours:readonly bigint[],assets:readonly Asset[],half=halfHoursEnabled())=>[...hours,...(half?hours.flatMap(t0=>assets.map(a=>t0+3n+BigInt(a))):[])];
 export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {}) {
   let assets: Asset[];
   try { assets=keeperAssets(); }catch(error){log({event:'invalid-assets'});throw error;}
@@ -162,7 +164,7 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
   if (listPath) {
     const listed = new EventHoursFile(listPath),
       apply = () => {
-        engine.listHours([...releases, ...listed.t0s()]);
+        engine.listHours([...releases, ...listedStarts(listed.t0s(),assets)]);
         log({ event: "hours", listed: listed.hours.length });
         engine.update();
       };

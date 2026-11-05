@@ -1,3 +1,4 @@
+import {secsOf,lastReadOf} from "./assets.js";
 export type CandlePrices = {
   t0: bigint;
   readWindow: number;
@@ -14,13 +15,13 @@ export type TicketPrices = {
 };
 export const CAP = 40_000_000n;
 export function boundary(t0: bigint, j: number) {
-  if (!Number.isInteger(j) || j < 0 || j > 12)
+  if (!Number.isInteger(j) || j < 0 || j > lastReadOf(t0))
     throw new RangeError("InvalidValue");
   return t0 + 300n * BigInt(j);
 }
 export const settleAfter = (
   c: Pick<CandlePrices, "t0" | "readWindow" | "ageLimit">,
-) => c.t0 + 3601n + BigInt(c.readWindow + c.ageLimit);
+) => c.t0 + secsOf(c.t0) + 1n + BigInt(c.readWindow + c.ageLimit);
 export function highLow(c: CandlePrices, t: TicketPrices) {
   return {
     high: c.readHigh > t.tailHigh ? c.readHigh : t.tailHigh,
@@ -78,9 +79,9 @@ export function resaleRecorded(c: CandlePrices, t: TicketPrices): bigint {
 /** Whether a vacant reading can still absorb an observation already on chain. */
 export function readPending(c: CandlePrices, now: bigint, feed: {price: bigint; publishTs: bigint} | null): boolean {
   const elapsed = now - c.t0, j = elapsed / 300n;
-  if (elapsed >= 0n && j <= 12n && !c.reads[Number(j)].price &&
+  if (elapsed >= 0n && j <= BigInt(lastReadOf(c.t0)) && !c.reads[Number(j)].price &&
       now <= boundary(c.t0, Number(j)) + BigInt(c.readWindow + c.ageLimit)) return true;
-  return feed !== null && c.reads.some((r, k) => k >= 1 && k <= 12 && !r.price &&
+  return feed !== null && c.reads.some((r, k) => k >= 1 && k <= lastReadOf(c.t0) && !r.price &&
     feed.publishTs >= boundary(c.t0, k) && feed.publishTs <= boundary(c.t0, k) + BigInt(c.readWindow) &&
     now - feed.publishTs <= BigInt(c.ageLimit));
 }

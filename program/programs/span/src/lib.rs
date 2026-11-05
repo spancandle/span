@@ -47,7 +47,7 @@ fn sale_open(candle: &Candle) -> Result<()> {
 }
 
 fn mark_deadline(candle: &Candle) -> Result<i64> {
-    math::add_time(math::add_time(candle.t0, 3600)?, i64::from(candle.age_limit))
+    math::add_time(math::add_time(candle.t0, math::window(candle.t0)?.1)?, i64::from(candle.age_limit))
 }
 
 #[program]
@@ -159,7 +159,7 @@ pub mod span {
         if ctx.accounts.candle.t0 != 0 {
             return Ok(());
         }
-        require!(t0.rem_euclid(60) < i64::from(oracle::ASSETS), SpanError::InvalidValue);
+        math::window(t0)?;
         require!(
             Clock::get()?.unix_timestamp
                 < t0.checked_sub(i64::from(ctx.accounts.config.buy_cutoff))
@@ -193,7 +193,7 @@ pub mod span {
         require!(t.state == TicketState::Sold, SpanError::NotSold);
         require!(t.buyer == Some(ctx.accounts.holder.key()), SpanError::NotBuyer);
         require!((PREMIUM_MIN..=PREMIUM_MAX).contains(&ask), SpanError::InvalidValue);
-        require!(Clock::get()?.unix_timestamp < until && until <= math::add_time(ctx.accounts.candle.t0, 3600)?, SpanError::InvalidValue);
+        require!(Clock::get()?.unix_timestamp < until && until <= math::add_time(ctx.accounts.candle.t0, math::window(ctx.accounts.candle.t0)?.1)?, SpanError::InvalidValue);
         ctx.accounts.resale.set_inner(Resale {
             ticket: t.key(), holder: ctx.accounts.holder.key(), ask, until, bump: ctx.bumps.resale,
         });
@@ -211,17 +211,17 @@ pub mod span {
         require!(c.reads[0].price > 0, SpanError::NoOpen);
         let clock = Clock::get()?;
         require!(clock.unix_timestamp <= offer.until, SpanError::BuyClosed);
-        let asset = c.t0.rem_euclid(60) as u8;
+        let asset = math::window(c.t0)?.0;
         require_keys_eq!(ctx.accounts.feed.key(), oracle::feed_of(ctx.accounts.config.feed, asset)?, SpanError::FeedNotConfig);
         // A vacant read can still absorb the observation already on chain.
         let elapsed = clock.unix_timestamp.checked_sub(c.t0).ok_or(SpanError::Overflow)?;
         let j = elapsed / 300;
-        if (0..=12).contains(&j) {
+        if (0..=i64::from(math::window(c.t0)?.2)).contains(&j) {
             let boundary = math::add_time(c.t0, j * 300)?;
             require!(c.reads[j as usize].price > 0 || clock.unix_timestamp > math::add_time(boundary, i64::from(c.read_window) + i64::from(c.age_limit))?, SpanError::ReadPending);
         }
         let price = oracle::peek(&ctx.accounts.feed.to_account_info(), asset)?;
-        for k in 1..=12 {
+        for k in 1..=usize::from(math::window(c.t0)?.2) {
             let boundary = math::add_time(c.t0, k as i64 * 300)?;
             require!(c.reads[k].price > 0 || price.publish_ts < boundary || price.publish_ts > math::add_time(boundary, i64::from(c.read_window))? || i128::from(clock.unix_timestamp) - i128::from(price.publish_ts) > i128::from(c.age_limit), SpanError::ReadPending);
         }
@@ -358,10 +358,10 @@ pub mod span {
         require!(c.reads[0].price > 0, SpanError::NoOpen);
         let clock = Clock::get()?;
         require!(clock.unix_timestamp <= ctx.accounts.until.until, SpanError::BuyClosed);
-        let asset = c.t0.rem_euclid(60) as u8;
+        let asset = math::window(c.t0)?.0;
         require_keys_eq!(ctx.accounts.feed.key(), oracle::feed_of(ctx.accounts.config.feed, asset)?, SpanError::FeedNotConfig);
         let price = oracle::read(&ctx.accounts.feed.to_account_info(), clock.unix_timestamp, c.age_limit, asset)?;
-        require!(price.publish_ts > c.t0 && price.publish_ts <= math::add_time(c.t0, 3600)?, SpanError::OutsideCandle);
+        require!(price.publish_ts > c.t0 && price.publish_ts <= math::add_time(c.t0, math::window(c.t0)?.1)?, SpanError::OutsideCandle);
         let (high, low) = t.high_low(c);
         let recorded = math::payout(c.reads[0].price, high.max(price.price), low.min(price.price), t.strike_bps)?;
         require!(recorded < VAULT_CAP, SpanError::CapReached);
@@ -603,7 +603,7 @@ pub mod span {
     }
 
     pub fn read(ctx: Context<ReadPrice>, j: u8) -> Result<()> {
-        require!(j <= 12, SpanError::InvalidValue);
+        require!(j <= math::window(ctx.accounts.candle.t0)?.2, SpanError::InvalidValue);
         let candle = &mut ctx.accounts.candle;
         let slot = usize::from(j);
         require!(candle.reads[slot].price == 0, SpanError::ReadFilled);
@@ -615,14 +615,14 @@ pub mod span {
         require!(clock.unix_timestamp >= boundary, SpanError::BeforeBoundary);
         require_keys_eq!(
             ctx.accounts.feed.key(),
-            oracle::feed_of(ctx.accounts.config.feed, candle.t0.rem_euclid(60) as u8)?,
+            oracle::feed_of(ctx.accounts.config.feed, math::window(candle.t0)?.0)?,
             SpanError::FeedNotConfig
         );
         let price = oracle::read(
             &ctx.accounts.feed.to_account_info(),
             clock.unix_timestamp,
             candle.age_limit,
-            candle.t0.rem_euclid(60) as u8,
+            math::window(candle.t0)?.0,
         )?;
         require!(
             price.publish_ts >= boundary
@@ -667,7 +667,7 @@ pub mod span {
         require!(p0 > 0, SpanError::NoOpen);
         require_keys_eq!(
             ctx.accounts.feed.key(),
-            oracle::feed_of(ctx.accounts.gate.config.feed, candle.t0.rem_euclid(60) as u8)?,
+            oracle::feed_of(ctx.accounts.gate.config.feed, math::window(candle.t0)?.0)?,
             SpanError::FeedNotConfig
         );
         let clock = Clock::get()?;
@@ -675,10 +675,10 @@ pub mod span {
             &ctx.accounts.feed.to_account_info(),
             clock.unix_timestamp,
             candle.age_limit,
-            candle.t0.rem_euclid(60) as u8,
+            math::window(candle.t0)?.0,
         )?;
         require!(
-            price.publish_ts > candle.t0 && price.publish_ts <= math::add_time(candle.t0, 3600)?,
+            price.publish_ts > candle.t0 && price.publish_ts <= math::add_time(candle.t0, math::window(candle.t0)?.1)?,
             SpanError::OutsideCandle
         );
         let (high, low) = t.high_low(candle);
@@ -742,7 +742,7 @@ pub mod span {
     pub fn settle(ctx: Context<Settle>) -> Result<()> {
         let candle = &ctx.accounts.candle;
         let end = math::add_time(
-            math::add_time(candle.t0, 3600)?,
+            math::add_time(candle.t0, math::window(candle.t0)?.1)?,
             i64::from(candle.read_window) + i64::from(candle.age_limit) + 1,
         )?;
         require!(Clock::get()?.unix_timestamp >= end, SpanError::NotClosed);

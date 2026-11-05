@@ -18,7 +18,7 @@ export type HealthDeps = {
 };
 export type HealthOptions = { scope: Scope; local?: string; data?: string; site?: string };
 export const FORWARD_HEADERS = ["x-http-method-override", "x-http-method", "x-method-override", "x-forwarded-host", "x-host", "x-forwarded-scheme", "x-original-url", "x-rewrite-url", "forwarded"];
-const shared = ["state.json", "chain.json"];
+const shared = ["state.json", "chain.json", "v2/state.json"];
 const totals = (status: any) => { if (!status?.http?.total || !Number.isFinite(status.generated)) throw Error("Origin counters unavailable"); return JSON.stringify(status.http.total); };
 export async function health(deps: HealthDeps, options: HealthOptions) {
   const lines: { check: string; ok: boolean }[] = [], local = options.local ?? "http://127.0.0.1:8789", data = options.data ?? "", site = options.site ?? "";
@@ -56,6 +56,7 @@ export async function health(deps: HealthDeps, options: HealthOptions) {
       });
     }
     const nonce = Math.random().toString(36).slice(2), probes: [string, RequestInit][] = [
+      [`/v2/state.json?x=${nonce}`, {}], ["/v2/state.json", { headers: { Origin: `https://n${nonce}.invalid` } }],
       [`/state.json?x=${nonce}`, {}], ["/nope.json", {}], ["/status.json", {}], ["/state.json", { method: "POST" }],
       ["/state.json", { headers: { Origin: `https://n${nonce}.invalid` } }], ...FORWARD_HEADERS.map(name => ["/state.json", { headers: { [name]: `${nonce}.invalid` } }] as [string, RequestInit]),
     ];

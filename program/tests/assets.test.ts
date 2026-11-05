@@ -7,7 +7,7 @@ import {ASSETS,assetOf,mintOf,startOf} from '../client/assets.js';
 import {settleAfter} from '../client/math.js';
 import {devFeedInstruction,feedPda} from './feed.js';
 const prices=[9490000000n,7790511000000n,226297000000n],feeds=[SOL_FEED,BTC_FEED,ETH_FEED],cu:any[]=[];
-it('maps starts without normalizing their seconds',()=>{for(const a of [0,1,2] as const){expect(assetOf(1200n+BigInt(a))).toBe(a);expect(startOf(1260n,a)).toBe(1200n+BigInt(a));}for(const t of [1203n,1259n])expect(()=>assetOf(t)).toThrow();});
+it('maps starts without normalizing their seconds',()=>{for(const a of [0,1,2] as const){expect(assetOf(1200n+BigInt(a))).toBe(a);expect(startOf(1260n,a)).toBe(1200n+BigInt(a));}expect(assetOf(1203n)).toBe(0);for(const t of [1206n,1259n])expect(()=>assetOf(t)).toThrow();});
 for(const asset of [0,1,2] as const)it(`${ASSETS[asset]} opens, reads thirteen times, marks and settles with the same price ratios`,async()=>{
  const h=await Harness.create({setSpan:true,asset}),ref=await h.ref();
  const open=await h.send('asset_open_candle',h.openCandleIx(ref));const t=await h.open({t0:ref.t0,loaded:true});
@@ -20,7 +20,7 @@ for(const asset of [0,1,2] as const)it(`${ASSETS[asset]} opens, reads thirteen t
  expect(row.open).toBeLessThanOrEqual(28000);expect(row.read).toBeLessThanOrEqual(28000);expect(row.mark).toBeLessThanOrEqual(42000);
  if(process.env.SPAN_ASSET_CU_OUT)writeFileSync(process.env.SPAN_ASSET_CU_OUT,JSON.stringify(cu,null,2)+'\n');
 });
-it('rejects unsupported start seconds',async()=>{const h=await Harness.create();for(const t0 of [1203n,1259n])await h.send('bad_asset',h.openCandleIx(await h.ref(t0)),h.stranger,'InvalidValue');});
+it('rejects unsupported start seconds',async()=>{const h=await Harness.create();await h.send('half_asset',h.openCandleIx(await h.ref(1203n)));for(const t0 of [1206n,1259n])await h.send('bad_asset',h.openCandleIx(await h.ref(t0)),h.stranger,'InvalidValue');});
 for(const asset of [1,2] as const)it(`${ASSETS[asset]} rejects another feed, wrong mint, owner and stale publication in reads and marks`,async()=>{
  const h=await Harness.create({setSpan:true,asset}),t=await h.open({loaded:true});h.clock(t.t0);h.price(prices[asset],t.t0);
  for(const feed of feeds.filter(f=>f!==h.feed))await h.send('wrong_read_feed',h.readIx(t,0,{feed}),h.stranger,'FeedNotConfig');

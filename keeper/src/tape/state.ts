@@ -1,4 +1,4 @@
-import { assetOf,nameOf } from "../../../program/client/assets.js";
+import { assetOf,nameOf,secsOf,lastReadOf } from "../../../program/client/assets.js";
 import { SPAN_PROGRAM_ADDRESS } from "../../../program/client/index.js";
 import { unwrapOption } from "@solana/kit";
 import {
@@ -11,6 +11,7 @@ import { spanHeld, type Chain, type SpanHoldRead } from "../keeper/chain.js";
 import type { RpcPool } from "../common/rpc.js";
 import type { History } from "./history.js";
 import {resaleEventsOf,transfersOf} from './transfers.js';
+export const legacyStart=(t0:bigint|string|number)=>((BigInt(t0)%60n+60n)%60n)<3n;
 // Mint decimals never change, so one successful read is kept for the process.
 export class SpanDecimals {
   private mint?: string;
@@ -47,7 +48,7 @@ export class SpanDecimals {
   }
 }
 export function candleReads(c: Candle, events: any[]) {
-  return c.reads.map((r, j) => {
+  return c.reads.slice(0,lastReadOf(c.t0)+1).map((r, j) => {
     if (r.price === 0n) return null;
     const e = events.find(
       (x) =>
@@ -92,17 +93,18 @@ export function liveDocuments(
   chain: Chain,
   history: History,
   decimals: (mint: string) => number | null = () => null,
+  version: 1|2 = 1,
 ) {
   const now = chain.now(),
     events = history.events("Read"),
-    tickets = [...chain.tickets].sort((a, b) =>
+    tickets = [...chain.tickets].filter(([,x])=>version===2||legacyStart(x.value.t0)).sort((a, b) =>
       a[1].value.id < b[1].value.id ? -1 : 1,
     ),
     config = chain.config!,
     spanMint = unwrapOption(config.spanMint) ?? null;
   return {
     state: {
-      v: 1,
+      v: version,
       generated: Date.now(),
       cluster: chain.rpc.cluster,
       genesis:
@@ -126,6 +128,7 @@ export function liveDocuments(
         nextTicketId: String(config.nextTicketId),
       },
       candles: [...chain.candles]
+        .filter(([,x])=>version===2||legacyStart(x.value.t0))
         .filter(
           ([, x]) =>
             x.value.t0 >= now - 604800n ||
@@ -150,6 +153,7 @@ export function liveDocuments(
             address,
             asset: nameOf(assetOf(c.t0)),
             t0: String(c.t0),
+            ...(version===2?{secs:Number(secsOf(c.t0))}:{}),
             readWindow: c.readWindow,
             ageLimit: c.ageLimit,
             buyCutoff: c.buyCutoff,
@@ -166,7 +170,7 @@ export function liveDocuments(
         }),
     },
     tickets: {
-      v: 1,
+      v: version,
       generated: Date.now(),
       tickets: tickets.map(([address, { value: t }]) => ({
         address,

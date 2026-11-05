@@ -10,7 +10,7 @@ const flush = async () => {
 };
 it("a creation reserved while a finalized recount is in flight stays reserved, so the trailing limit holds", async () => {
   const rent = 2039280n,
-    t0 = 1000000n,
+    t0 = 1000020n,
     candle = {
       t0,
       readWindow: 20,

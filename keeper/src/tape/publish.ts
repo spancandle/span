@@ -1,4 +1,4 @@
-import { ASSETS,assetOf,nameOf,feedOf,type Asset } from "../../../program/client/assets.js";
+import { ASSETS,assetOf,nameOf,feedOf,secsOf,lastReadOf,type Asset } from "../../../program/client/assets.js";
 import { ORACLE_FEEDS } from "./doves.js";
 const DEV_FEEDS=await Promise.all(([0,1,2] as const).map(a=>feedOf(a,ORACLE_FEEDS[0],'devnet')));
 import { SPAN_PROGRAM_ADDRESS, settleAfter } from "../../../program/client/index.js";
@@ -10,7 +10,7 @@ import { readdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { atomicFile, atomicText } from "./http.js";
-import { liveDocuments, markLog, candleReads, entryOf } from "./state.js";
+import { liveDocuments, legacyStart, markLog, candleReads, entryOf } from "./state.js";
 import { json } from "../common/env.js";
 import { log, safeError } from "../common/log.js";
 import { getCandleDecoder } from "../../../program/client/index.js";
@@ -22,6 +22,7 @@ const sha1 = (x: string) => createHash("sha1").update(x).digest("hex");
 import {transfersOf} from './transfers.js';
 const RETAIN = 8 * 86400;
 export class Publisher {
+  private v2?: Publisher;
   private liveAt = 0;
   private content = "";
   private historyAt = 0;
@@ -46,11 +47,18 @@ export class Publisher {
     // The hours history keeps without a ticket; a function follows a list that is read again.
     readonly releaseHours: readonly bigint[] | (() => readonly bigint[]) = RELEASE_HOURS,
     readonly listed: () => EventHours = () => ({ hours: [], hide: [] }),
+    readonly version: 1|2 = 1,
   ) {
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS candle_path(t0 TEXT PRIMARY KEY,raw TEXT NOT NULL)",
     );
   }
+  versioned(): Publisher {
+    if(this.version===2)return this;
+    return this.v2??=new Publisher(this.store,this.chain,this.history,this.recorder,resolve(this.dir,'v2'),this.spanDecimals,this.releaseHours,this.listed,2);
+  }
+  private visible(t0:bigint|string|number){return this.version===2||legacyStart(t0);}
+  private cacheKey(t0:string){return this.version===2?`v2:${t0}`:t0;}
   prune(now: number) {
     this.recorder.prune(now);
     this.prunedBefore = Math.max(this.prunedBefore, now - RETAIN);
@@ -93,13 +101,13 @@ export class Publisher {
   feedDocument() {
     const now = Number(this.chain.now()),
       open = [...this.chain.candles.values()]
-        .filter(x=>assetOf(x.value.t0)===0)
+        .filter(x=>this.visible(x.value.t0)&&assetOf(x.value.t0)===0)
         .map((x) => Number(x.value.t0))
-        .filter((t) => t <= now && now < t + 3600),
+        .filter((t) => t <= now && now < t + Number(secsOf(t))),
       from = open.length ? Math.min(...open) : now,
       rows = open.length ? this.values(from, now) : [];
     return {
-      v: 1,
+      v: this.version,
       generated: Date.now(),
       feed: this.chain.config!.feed,
       from: String(from),
@@ -114,17 +122,19 @@ export class Publisher {
           reason: g.reason,
         })),
       assets: Object.fromEntries(([1,2] as const).flatMap(asset=>{
-        const times=[...this.chain.candles.values()].filter(x=>assetOf(x.value.t0)===asset).map(x=>Number(x.value.t0)).filter(t=>t<=now&&now<t+3600);
+        const times=[...this.chain.candles.values()].filter(x=>this.visible(x.value.t0)&&assetOf(x.value.t0)===asset).map(x=>Number(x.value.t0)).filter(t=>t<=now&&now<t+Number(secsOf(t)));
         if(!times.length)return [];
         const from=Math.min(...times),rows=this.values(from,now,ORACLE_FEEDS[asset]);
         return [[ASSETS[asset],{feed:this.outputFeed(asset),from:String(from),ts:delta(rows.map(x=>x.publish_ts-from)),p:delta(rows.map(x=>x.price)),slots:delta(rows.map(x=>x.slot))}]];
       })),
-      candles: open.map((t0) => {
-        const rows = this.values(t0, Math.min(now, t0 + 3600)),
+      candles: (this.version===1?open:[...this.chain.candles.values()].map(x=>Number(x.value.t0)).filter(t=>t<=now&&now<t+Number(secsOf(t)))).map((t0) => {
+        const feed=ORACLE_FEEDS[assetOf(t0)];
+        const rows = this.values(t0, Math.min(now, t0 + Number(secsOf(t0))),feed),
           last = rows.at(-1),
-          d = this.doves(t0, Math.min(now, t0 + 3600));
+          d = this.doves(t0, Math.min(now, t0 + Number(secsOf(t0))),feed);
         return {
           t0: String(t0),
+          ...(this.version===2?{secs:Number(secsOf(t0)),asset:nameOf(assetOf(t0))}:{}),
           high: d?.high ?? null,
           low: d?.low ?? null,
           last: last
@@ -141,7 +151,7 @@ export class Publisher {
       ),
       now = this.chain.now();
     return [...this.chain.candles.values()]
-      .filter(({ value: c }) => (hours.has(c.t0)||hours.has(c.t0-BigInt(assetOf(c.t0)))) && now >= settleAfter(c))
+      .filter(({ value: c }) => this.visible(c.t0) && (hours.has(c.t0)||hours.has(c.t0-((c.t0%60n+60n)%60n))) && now >= settleAfter(c))
       .map(({ value: c }) => String(c.t0)).sort();
   }
   /** The listed hours with their reasons, then the reasons sellers wrote in the transactions that opened candles. */
@@ -156,7 +166,7 @@ export class Publisher {
         sig: string;
       }[]
     )
-      .filter((r) => !listed.has(r.t0) && !hidden.has(r.t0))
+      .filter((r) => this.visible(r.t0)&&!listed.has(r.t0) && !hidden.has(r.t0))
       .sort((a, b) => (BigInt(b.t0) > BigInt(a.t0) ? 1 : -1))
       .slice(0, 500)
       .map((r) => ({ t0: r.t0, name: null, why: r.why, source: null, by: "seller", sig: r.sig }));
@@ -171,15 +181,16 @@ export class Publisher {
       })),
       ...sellers,
     ].sort((a, b) => (BigInt(a.t0) < BigInt(b.t0) ? -1 : 1));
-    return { v: 1, generated: Date.now(), hours: rows.map(h=>({...h,asset:nameOf(assetOf(BigInt(h.t0)))})) };
+    return { v: this.version, generated: Date.now(), hours: rows.filter(h=>this.visible(h.t0)).map(h=>({...h,asset:nameOf(assetOf(BigInt(h.t0))),...(this.version===2?{secs:Number(secsOf(BigInt(h.t0)))}:{})})) };
   }
   historyDocument() {
     const receipts = this.history
         .events("Settled")
+        .filter(x=>this.visible(x.t0))
         .reverse()
         .slice(0, 500)
         .map((x) => ({ ...x, entry:entryOf(this.history,x.ticket), transfers:transfersOf(this.history,x.ticket), asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
-      withdrawals = this.history.events("Withdrawn").reverse().slice(0, 500).map(x=>({...x,asset:nameOf(assetOf(BigInt(x.t0)))})),
+      withdrawals = this.history.events("Withdrawn").filter(x=>this.visible(x.t0)).reverse().slice(0, 500).map(x=>({...x,asset:nameOf(assetOf(BigInt(x.t0)))})),
       ts = [...new Set([...receipts.map((x) => x.t0), ...this.closedReleaseHours()])]
         .sort((a, b) => (BigInt(a) > BigInt(b) ? -1 : 1))
         .slice(0, 200);
@@ -191,10 +202,11 @@ export class Publisher {
       )?.value;
       const old = this.store.db
         .prepare("SELECT raw FROM candle_history WHERE t0=?")
-        .get(t0) as any;
-      const archived = old ? JSON.parse(old.raw) : undefined;
+        .get(this.cacheKey(t0)) as any;
+      const fallback=this.version===2&&!old?this.store.db.prepare("SELECT raw FROM candle_history WHERE t0=?").get(t0)as any:undefined;
+      const archived = old ? JSON.parse(old.raw) : fallback?JSON.parse(fallback.raw):undefined;
       const events = reads.filter((x) => x.t0 === t0),
-        slots = Array.from({ length: 13 }, (_, j) => {
+        slots = Array.from({ length: lastReadOf(BigInt(t0))+1 }, (_, j) => {
           const e = events.find((x) => x.j === j);
           return e
             ? {
@@ -213,11 +225,12 @@ export class Publisher {
         // pruned, the record stored while it was whole is the one to keep.
         Number(t0) < Number(this.chain.now()) - 8 * 86400
           ? (archived?.doves ?? null)
-          : (this.doves(Number(t0), Number(t0) + 3600, ORACLE_FEEDS[assetOf(BigInt(t0))]) ??
+          : (this.doves(Number(t0), Number(t0) + Number(secsOf(BigInt(t0))), ORACLE_FEEDS[assetOf(BigInt(t0))]) ??
             archived?.doves ??
             null);
       const value = {
         t0,
+        ...(this.version===2?{secs:Number(secsOf(BigInt(t0)))}:{}),
         asset:nameOf(assetOf(BigInt(t0))),
         reads: c ? candleReads(c, reads) : slots,
         readHigh: c
@@ -234,20 +247,22 @@ export class Publisher {
       };
       this.store.db
         .prepare("INSERT OR REPLACE INTO candle_history VALUES(?,?)")
-        .run(t0, json(value));
+        .run(this.cacheKey(t0), json(value));
       return value;
     });
-    return { v: 1, generated: Date.now(), receipts, withdrawals, candles };
+    return { v: this.version, generated: Date.now(), receipts, withdrawals, candles };
   }
   candlePathBody(t0: number) {
-    const asset=assetOf(t0),feed=ORACLE_FEEDS[asset],rows = this.values(t0, t0 + 3600,feed),
+    if(!this.visible(t0))throw Error('Unsupported candle path');
+    const asset=assetOf(t0),feed=ORACLE_FEEDS[asset],rows = this.values(t0, t0 + Number(secsOf(t0)),feed),
       gaps = this.gaps(feed).filter(
-        (g) => g.a < t0 + 3600 && (g.b === null || g.b > t0),
+        (g) => g.a < t0 + Number(secsOf(t0)) && (g.b === null || g.b > t0),
       );
     return {
       feed: this.outputFeed(asset),
       asset: nameOf(asset),
       t0: String(t0),
+      ...(this.version===2?{secs:Number(secsOf(t0))}:{}),
       from: String(t0),
       ts: delta(rows.map((x) => x.publish_ts - t0)),
       p: delta(rows.map((x) => x.price)),
@@ -263,12 +278,16 @@ export class Publisher {
   // Returns false while the path may still become available.
   private candlePath(t0: string, now: number) {
     const t = Number(t0);
-    if (now < t + 3600 + 120) return false;
+    if (now < t + Number(secsOf(t)) + 120) return false;
     const stored = this.store.db
       .prepare("SELECT raw FROM candle_path WHERE t0=?")
-      .get(t0) as { raw: string } | undefined;
+      .get(this.cacheKey(t0)) as { raw: string } | undefined;
     let raw = stored?.raw;
-    if(raw){const value=JSON.parse(raw);if(value.asset===undefined){value.asset=nameOf(assetOf(t));raw=json(value);this.store.db.prepare('UPDATE candle_path SET raw=? WHERE t0=?').run(raw,t0);}}
+    if(!raw&&this.version===2){
+      const prior=this.store.db.prepare("SELECT raw FROM candle_path WHERE t0=?").get(t0)as {raw:string}|undefined;
+      if(prior)raw=json({...JSON.parse(prior.raw),v:2,secs:Number(secsOf(t))});
+    }
+    if(raw){const value=JSON.parse(raw);if(value.asset===undefined){value.asset=nameOf(assetOf(t));raw=json(value);this.store.db.prepare('UPDATE candle_path SET raw=? WHERE t0=?').run(raw,this.cacheKey(t0));}}
     if (t >= now - RETAIN && t >= this.prunedBefore) {
       if (
         !this.chain.config ||
@@ -276,7 +295,7 @@ export class Publisher {
           .prepare(
             "SELECT 1 FROM doves WHERE feed=? AND publish_ts>=? AND publish_ts<=? LIMIT 1",
           )
-          .get(ORACLE_FEEDS[assetOf(t)],t, t + 3600)
+          .get(ORACLE_FEEDS[assetOf(t)],t, t + Number(secsOf(t)))
       )
         return false;
       const body = this.candlePathBody(t),
@@ -287,10 +306,10 @@ export class Publisher {
         old = sha1(json(rest));
       }
       if (raw === undefined || old !== key) {
-        raw = json({ v: 1, generated: Date.now(), ...body });
+        raw = json({ v: this.version, generated: Date.now(), ...body });
         this.store.db
           .prepare("INSERT OR REPLACE INTO candle_path VALUES(?,?)")
-          .run(t0, raw);
+          .run(this.cacheKey(t0), raw);
       }
       this.bodies.set(t0, key);
     }
@@ -369,7 +388,7 @@ export class Publisher {
         unmatched++;
     }
     return {
-      v: 1,
+      v: this.version,
       generated: now,
       cluster: this.chain.rpc.cluster,
       program: SPAN_PROGRAM_ADDRESS,
@@ -414,7 +433,7 @@ export class Publisher {
   }
   publish(now = Date.now()) {
     if (this.chain.config && now - this.chain.lastReadMs <= 12000) {
-      const docs = liveDocuments(this.chain, this.history, this.spanDecimals),
+      const docs = liveDocuments(this.chain, this.history, this.spanDecimals,this.version),
         content = json({
           ...docs,
           state: { ...docs.state, generated: 0 },
@@ -454,5 +473,6 @@ export class Publisher {
       }
       this.hoursKey = key;
     }
+    if(this.version===1)this.versioned().publish(now);
   }
 }
