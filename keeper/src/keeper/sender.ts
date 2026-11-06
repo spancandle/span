@@ -122,6 +122,10 @@ type Flight = {
   retrySlot: boolean;
   ack: boolean;
   timer?: ReturnType<typeof setInterval>;
+  retryTimer?: ReturnType<typeof setTimeout>;
+  retryAt?: number;
+  lastRequestAt?: number;
+  auditScheduled: boolean;
   stop?: () => void;
   busy: boolean;
   trigger?: FeedValue;
@@ -141,6 +145,7 @@ export class Sender {
     const f = this.flights.get(key);
     if (!f) return;
     clearInterval(f.timer);
+    clearTimeout(f.retryTimer);
     f.stop?.();
     this.flights.delete(key);
   }
@@ -165,6 +170,7 @@ export class Sender {
       retrySlot: false,
       ack: false,
       busy: false,
+      auditScheduled: false,
       trigger,
     };
     this.flights.set(p.action.key, f);
@@ -189,13 +195,27 @@ export class Sender {
         this.finish(f, "Expired", "expired");
         return;
       }
-      if (f.accepted && !f.ack) void this.transmit(f, true);
+      if (f.accepted && !f.ack && f.lastRequestAt !== Date.now()) void this.transmit(f, true);
     }, 400);
-    const audit = setTimeout(() => void this.audit(p), 20000);
-    audit.unref();
   }
   private async transmit(f: Flight, skip: boolean) {
     if (f.busy || this.flights.get(f.p.action.key) !== f) return;
+    if (f.retryAt !== undefined) {
+      if (Date.now() < f.retryAt) {
+        /* a timer can wake a millisecond early; wait out the rest instead of dropping the retry */
+        clearTimeout(f.retryTimer);
+        f.retryTimer = setTimeout(() => void this.transmit(f, false), f.retryAt - Date.now());
+        return;
+      }
+      if (this.height() > f.p.lastValidBlockHeight ||
+          (f.p.action.end !== undefined && this.now() > f.p.action.end)) {
+        this.finish(f, "Expired", "expired");
+        return;
+      }
+      clearTimeout(f.retryTimer);
+      f.retryTimer = undefined;
+      f.retryAt = undefined;
+    }
     f.busy = true;
     try {
       const v = await this.rpc.callAt<string>(
@@ -210,6 +230,15 @@ export class Sender {
           },
         ],
         f.p.action.kind === "settle" || f.p.action.kind === "closeUntil" || (f.p.action.kind === "closeResale" || f.p.action.kind === "closeBid") ? "normal" : "window",
+        undefined,
+        undefined,
+        () => {
+          f.lastRequestAt = Date.now();
+          if (f.auditScheduled) return;
+          f.auditScheduled = true;
+          const audit = setTimeout(() => void this.audit(f.p), 20000);
+          audit.unref();
+        },
       );
       if (this.flights.get(f.p.action.key) !== f) return;
       if (v.value !== f.p.signature) throw Error("RPC signature mismatch");
@@ -237,6 +266,12 @@ export class Sender {
       }
     } catch (e) {
       if (this.flights.get(f.p.action.key) !== f) return;
+      if (!skip && (f.p.action.kind === "read" || f.p.action.kind === "mark") &&
+          e instanceof RpcFault && !e.sent) {
+        f.retryAt = e.retryAt ?? Date.now() + 10000;
+        f.retryTimer = setTimeout(() => void this.transmit(f, false), Math.max(0, f.retryAt - Date.now()));
+        return;
+      }
       const name = errorName(e);
       if (name === "BeforeBoundary" && f.p.action.kind === "read" && !skip) {
         f.retrySlot = true;

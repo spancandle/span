@@ -277,6 +277,7 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
               address: payer.address,
               subscription: ws.ready,
               endpoint: ws.endpoint,
+              clockAgeMs: chain.clockAgeMs(),
               candles: [...chain.candles.values()].filter(
                 ({ value: c }) =>
                   chain.now() >= c.t0 - 30n &&

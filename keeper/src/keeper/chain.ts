@@ -69,10 +69,8 @@ export class Chain {
   height = 0n;
   lastFullMs = 0;
   lastReadMs = 0;
-  private anchorSlot = 0;
   private anchorTime = 0;
-  private slotMs = 400;
-  private slotAt = 0;
+  private anchorAtMs = Date.now();
   private feedKeys = new Map<Asset,Address>();
   private feedStops = new Map<Asset,()=>void>();
   private lastFeed = new Map<Asset,string>();
@@ -90,12 +88,10 @@ export class Chain {
     readonly keeper?: Address,
   ) {}
   now() {
-    return BigInt(
-      Math.floor(
-        this.anchorTime +
-          (Math.max(0, this.slot - this.anchorSlot) * this.slotMs) / 1000,
-      ),
-    );
+    return BigInt(this.anchorTime + Math.floor(this.clockAgeMs() / 1000));
+  }
+  clockAgeMs() {
+    return Date.now() - this.anchorAtMs;
   }
   active() {
     const now = this.now();
@@ -111,13 +107,6 @@ export class Chain {
   }
   setSlot(slot: number) {
     if (slot > this.slot) {
-      const at = Date.now();
-      if (this.slotAt && slot - this.slot < 20) {
-        const measured = (at - this.slotAt) / (slot - this.slot);
-        if (measured > 100 && measured < 2000)
-          this.slotMs = this.slotMs * 0.9 + measured * 0.1;
-      }
-      this.slotAt = at;
       this.slot = slot;
       this.onSlot();
     }
@@ -310,8 +299,8 @@ export class Chain {
     const d = bytes(await account(this.rpc, CLOCK));
     if (d.length < 40) throw Error("Clock unavailable");
     this.anchorTime = Number(d.readBigInt64LE(32));
-    this.anchorSlot = Number(d.readBigUInt64LE(0));
-    this.setSlot(this.anchorSlot);
+    this.anchorAtMs = Date.now();
+    this.setSlot(Number(d.readBigUInt64LE(0)));
   }
   async pollFeed() {
     if(!this.config)return;

@@ -10,7 +10,7 @@ export const DETERMINISTIC = new Set([
 ]);
 export type Mode = "normal" | "prepare" | "window";
 export type Endpoint = {
-  name: "public" | "fallback" | "fallback2";
+  name: "public" | "fallback" | "fallback2" | "fallback3";
   url: string;
   ws: string;
   verified?: boolean;
@@ -24,6 +24,8 @@ export class RpcFault extends Error {
     readonly data?: any,
     readonly deterministic = false,
     readonly retryMs = 10000,
+    readonly sent = true,
+    readonly retryAt?: number,
   ) {
     super(
       `RPC ${method}: ${code === undefined ? "transport unavailable" : `error ${code}`}`,
@@ -41,6 +43,7 @@ export function endpoints(c: Cluster): Endpoint[] {
   for (const [suffix, name] of [
     ["", "fallback"],
     ["_2", "fallback2"],
+    ["_3", "fallback3"],
   ] as const) {
     const devnetUrl =
       c === "devnet"
@@ -135,7 +138,23 @@ export class RpcPool {
     params: unknown[],
     mode: Mode,
     lane?: string,
+    onRequest?: () => void,
   ): Promise<T> {
+    const now = Date.now(),
+      paceKey =
+        e.name +
+        ":" +
+        (lane
+          ? `lane:${lane}`
+          : mode === "prepare"
+            ? "prepare"
+            : method === "sendTransaction"
+              ? "send"
+              : "query"),
+      spacing = mode === "prepare" ? 125 : method === "sendTransaction" ? 100 : 250,
+      at = mode === "window" || lane ? now : Math.max(now, this.starts.get(paceKey) ?? now);
+    this.starts.set(paceKey, Math.max(at + spacing, this.starts.get(paceKey) ?? 0));
+    if (at > now) await new Promise((r) => setTimeout(r, at - now));
     const ms =
       mode === "window"
         ? 250
@@ -159,31 +178,9 @@ export class RpcPool {
       }, ms);
     });
     const work = async () => {
-      const now = Date.now(),
-        paceKey =
-          e.name +
-          ":" +
-          (lane
-            ? `lane:${lane}`
-            : mode === "prepare"
-              ? "prepare"
-              : method === "sendTransaction"
-                ? "send"
-                : "query"),
-        spacing =
-          mode === "prepare" ? 125 : method === "sendTransaction" ? 100 : 250,
-        at =
-          mode === "window" || lane
-            ? now
-            : Math.max(now, this.starts.get(paceKey) ?? now);
-      this.starts.set(
-        paceKey,
-        Math.max(at + spacing, this.starts.get(paceKey) ?? 0),
-      );
-      if (at > now) await new Promise((r) => setTimeout(r, at - now));
-      if (abort.signal.aborted) throw new RpcFault(method);
       let response: Response;
       try {
+        onRequest?.();
         response = await this.transport(e.url, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -238,6 +235,7 @@ export class RpcPool {
     mode: Mode = "normal",
     preferred?: Endpoint["name"],
     lane?: string,
+    onRequest?: () => void,
   ): Promise<{ value: T; endpoint: Endpoint["name"] }> {
     const available = this.list.filter((e) => e.verified && !e.disabled),
       ordered = preferred
@@ -247,11 +245,13 @@ export class RpcPool {
           ]
         : available;
     let last = new RpcFault(method);
+    let attempted = false;
     for (const e of ordered) {
       if ((e.hold ?? 0) > Date.now()) continue;
+      attempted = true;
       try {
         return {
-          value: await this.request<T>(e, method, params, mode, lane),
+          value: await this.request<T>(e, method, params, mode, lane, onRequest),
           endpoint: e.name,
         };
       } catch (error) {
@@ -270,6 +270,12 @@ export class RpcPool {
         this.metrics.add(e.name, method, "failovers");
         last = fault;
       }
+    }
+    if (!attempted) {
+      const retryAt = ordered.length
+        ? Math.min(...ordered.map((e) => e.hold ?? Date.now()))
+        : Date.now() + 10000;
+      throw new RpcFault(method, undefined, undefined, false, 10000, false, retryAt);
     }
     throw last;
   }
