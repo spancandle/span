@@ -100,3 +100,19 @@ pub struct Resale {
     pub until: i64,
     pub bump: u8,
 }
+
+#[account]
+#[derive(InitSpace)]
+pub struct Bid {
+    pub ticket: Pubkey,
+    pub bidder: Pubkey,
+    pub ask: u64,
+    pub cap: u64,
+    pub until: i64,
+    pub span_amount: u64,
+    pub step_bps: u16,
+    pub marker: Pubkey,
+    pub bump: u8,
+    pub usdc_bump: u8,
+    pub span_bump: u8,
+}

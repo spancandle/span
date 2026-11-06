@@ -1,3 +1,5 @@
+import { findAssociatedTokenPda, getTokenDecoder, AccountState } from "@solana-program/token";
+import { TOKEN } from "../../../program/client/constants.js";
 import { ASSETS, assetOf, feedOf, type Asset } from "../../../program/client/assets.js";
 import { resolve } from "node:path";
 import { address, unwrapOption, type Address, type TransactionSigner } from "@solana/kit";
@@ -6,11 +8,11 @@ import { cluster, ROOT, json, feeBounds } from "../common/env.js";
 import { log, safeError } from "../common/log.js";
 import { RpcPool } from "../common/rpc.js";
 import { Subscriptions } from "../common/ws.js";
-import { Chain, signerFile, settlement } from "./chain.js";
+import { Chain, signerFile, settlement, bytes, CLOCK } from "./chain.js";
 import { HeightRecord, CreationBudget } from "./budget.js";
 import { PriorityFees } from "./priority.js";
 import { prepareTransaction, Sender, type Action } from "./sender.js";
-import { Engine } from "./engine.js";
+import { Engine, BidderAccountUnavailable } from "./engine.js";
 import { Overlay } from "./overlay.js";
 import { RELEASE_HOURS } from "../common/release-hours.js";
 import { EventHoursFile, eventHoursPath } from "../common/event-hours.js";
@@ -29,6 +31,41 @@ export async function createPrepare(
   return async (a: Action, fee: bigint) => {
     const hash = latest();
     if (!hash) throw Error("Preparation unavailable");
+    if (a.kind === "closeBid") {
+      const bid=address(a.bid!),value=chain.bids.get(bid)?.value,config=chain.config;
+      if (!value || !config) throw Error("Bid preparation unavailable");
+      const observed=await rpc.call("getAccountInfo",[value.ticket,{encoding:"base64",commitment:"confirmed"}]);
+      if (!observed || !("value" in observed)) throw Error("Ticket unavailable");
+      if (observed.value?.owner === s.SPAN_PROGRAM_ADDRESS && bytes(observed.value).length > 0) {
+        const clock=await rpc.call("getAccountInfo",[CLOCK,{encoding:"base64",commitment:"confirmed"}]);
+        const data=bytes(clock?.value);
+        if (data.length < 40 || data.readBigInt64LE(32) <= value.until) throw Error("Bid still live");
+      }
+      const destination=async(mint:Address,program:Address)=>{
+        const ata=(await findAssociatedTokenPda({owner:value.bidder,mint,tokenProgram:program}))[0];
+        const row=(await rpc.call("getAccountInfo",[ata,{encoding:"base64",commitment:"confirmed"}]))?.value;
+        try {
+          const data=bytes(row);
+          if (row?.owner !== program || data.length < 165) throw new BidderAccountUnavailable("Bidder token account unavailable");
+          const token=getTokenDecoder().decode(data.subarray(0,165));
+          if (token.owner !== value.bidder || token.mint !== mint || token.state !== AccountState.Initialized) throw new BidderAccountUnavailable("Invalid bidder token account");
+        } catch (error) {
+          if (error instanceof BidderAccountUnavailable) throw error;
+          throw new BidderAccountUnavailable("Invalid bidder token account");
+        }
+        return ata;
+      };
+      const bidderUsdc=await destination(config.usdcMint,TOKEN),loaded=value.spanAmount>0n,
+        spanMint=loaded?unwrapOption(config.spanMint):undefined,spanTokenProgram=loaded?unwrapOption(config.spanTokenProgram):undefined;
+      if (loaded && (!spanMint || !spanTokenProgram)) throw Error("SPAN unavailable");
+      const ix=s.getCloseBidInstruction({bid,ticket:value.ticket,bidder:value.bidder,closer:payer,
+        bidUsdc:(await s.findBidUsdcPda(bid))[0],bidderUsdc,usdcMint:config.usdcMint,tokenProgram:TOKEN,
+        bidSpan:loaded?(await s.findBidSpanPda(bid))[0]:undefined,
+        bidderSpan:loaded?await destination(spanMint!,spanTokenProgram!):undefined,
+        spanMint:spanMint??undefined,spanTokenProgram:spanTokenProgram??undefined,eventAuthority,program:s.SPAN_PROGRAM_ADDRESS});
+      priorities.register(a.key,[ix],payer.address);
+      return prepareTransaction([ix],payer,hash,a,fee);
+    }
     if (a.kind === "closeResale") {
       const key=address(a.resale!),value=chain.resales.get(key)?.value;
       if (!value) throw Error("Resale closed");

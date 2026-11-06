@@ -39,7 +39,7 @@ pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16) -> Result<u64> {
 }
 ```
 
-A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L684-L695):
+A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L896-L907):
 
 ```rust
 let (high, low) = t.high_low(candle);
@@ -97,6 +97,7 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | Ticket | Seller, optional buyer, premium, length, reader, SPAN load, tail high and low, marks and burned amount |
 | Until | Optional per ticket: the time its seller keeps it for sale inside its hour |
 | Resale | Optional per ticket: its buyer's price for the rest of the hour and the time the offer stands |
+| Bid | Optional per ticket and bidder: a price for the rest of the hour, the most the bidder will pay, the time the bid stands, the USDC behind it and any SPAN to load |
 | Vault | Ticket's classic Token USDC account |
 | SPAN holding account | Ticket's unburned SPAN |
 
@@ -123,8 +124,12 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | list_resale | ResaleListed | Offer a bought ticket for the rest of its hour at a price, until a time; buyer only |
 | buy_resale | Resold | After the opening reading, pay the holder what the candle has recorded plus their price, up to a stated maximum, and become the ticket's buyer |
 | close_resale | ResaleClosed | Withdraw an offer (holder), or return the account's rent once the ticket is closed (anyone) |
+| place_bid | BidPlaced | Bid for a bought ticket: a price for the rest of its hour, the most you will pay and a time, with that most held in USDC by the bid; anyone but the ticket's buyer |
+| bid_span | BidSpan | Add SPAN, a step and a reader to your bid, to be loaded onto the ticket if the bid is taken; bidder only |
+| accept_bid | BidAccepted | After the opening reading, take a bid on your ticket: receive what the candle has recorded plus the bid's price, return the rest of its USDC to the bidder, make the bidder the ticket's buyer and load its SPAN; buyer only |
+| close_bid | BidClosed | Withdraw a bid with its USDC and SPAN (bidder), or return them once its time has passed or the ticket is closed (anyone) |
 
-First loading and reader changes are allowed through the candle's end plus `age_limit`, inclusive: `t0 + 3600 + age_limit`, or `t0 + 1800 + age_limit` on a 30-minute candle. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. A resale returns the holder's SPAN and clears the reader; the recorded tails, mark count and burned amount stay with the ticket. Buying and selling still close at the buying cutoff, except for a ticket opened with `open_running`.
+First loading and reader changes are allowed through the candle's end plus `age_limit`, inclusive: `t0 + 3600 + age_limit`, or `t0 + 1800 + age_limit` on a 30-minute candle. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. A resale returns the holder's SPAN and clears the reader; the recorded tails, mark count and burned amount stay with the ticket. Taking a bid does the same, then loads the bid's SPAN with its step and reader. Buying and selling still close at the buying cutoff, except for a ticket opened with `open_running`.
 
 ## Buying inside the hour
 
@@ -134,9 +139,13 @@ A ticket opened with `open_running` stays for sale after its hour starts, until 
 
 A ticket's buyer can offer it with `list_resale` at a price, 0.10 to 39 USDC, until a time no later than the candle's end. After the opening reading, `buy_resale` computes A, the payout of the high and low recorded so far, without reading a new price, and the new buyer pays A plus that price straight to the holder. The vault does not move, so the seller's side is unchanged, and since a recorded high or low never shrinks, the final payout cannot fall below A. The holder's unburned SPAN and the rent of its holding account go back to the holder. A resale records no price, so a wick enters the ticket only through a read or a mark. It waits while a scheduled read can still be filled, from its open window or from the price already in the DOVES account; the buyer can send that read first in the same transaction. A ticket with A at 40 USDC is not resold.
 
+## Bidding for a ticket inside the hour
+
+Anyone but a ticket's buyer can bid for it with `place_bid`: a price for the rest of the hour, 0.10 to 39 USDC, the most they will pay in all, and a time no later than the candle's end. The bid holds that most in USDC, and `bid_span` can add SPAN with a step and a reader. After the opening reading, the buyer can take a bid with `accept_bid`. A is computed as in `buy_resale`, from the high and low recorded so far, and the bid waits under the same rule while a scheduled read can still be filled. The buyer receives A plus the bid's price, never more than the bid's most; the bidder gets the rest of its USDC back and becomes the ticket's buyer. The buyer's unburned SPAN and the lamports of its holding account go back to the buyer, and in the same transaction the bid's SPAN is loaded into a new holding account whose rent the bid set aside. A recorded high or low never shrinks, so A only grows while a bid stands and the final payout cannot fall below it. A buyer with an open resale offer closes it before taking a bid. The vault does not move, so the seller's side is unchanged.
+
 ## Settlement
 
-Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. Settlement is available after the candle's end, the read window, the age limit and one second.
+Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. A ticket that changed hands through a bid settles the same way. Settlement is available after the candle's end, the read window, the age limit and one second.
 
 ## Authority
 

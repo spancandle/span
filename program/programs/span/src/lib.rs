@@ -10,6 +10,7 @@ pub mod oracle;
 pub mod state;
 
 use contexts::*;
+use contexts::BidSpan;
 use error::SpanError;
 use events::*;
 use state::*;
@@ -285,6 +286,217 @@ pub mod span {
             require_keys_eq!(ctx.accounts.closer.key(), ctx.accounts.resale.holder, SpanError::NotHolder);
         }
         emit_cpi!(ResaleClosed { ticket: ctx.accounts.resale.ticket, resale: ctx.accounts.resale.key(), holder: ctx.accounts.resale.holder, closer: ctx.accounts.closer.key() });
+        Ok(())
+    }
+
+    pub fn place_bid(ctx: Context<PlaceBid>, ask: u64, cap: u64, until: i64) -> Result<()> {
+        let t = &ctx.accounts.ticket;
+        require!(t.state == TicketState::Sold, SpanError::NotSold);
+        require!(t.buyer != Some(ctx.accounts.bidder.key()), SpanError::InvalidValue);
+        require!((PREMIUM_MIN..=PREMIUM_MAX).contains(&ask), SpanError::InvalidValue);
+        require!(ask <= cap && cap <= VAULT_CAP.checked_add(PREMIUM_MAX).ok_or(SpanError::Overflow)?, SpanError::InvalidValue);
+        require!(Clock::get()?.unix_timestamp < until && until <= math::add_time(t.t0, math::window(t.t0)?.1)?, SpanError::InvalidValue);
+        let before = ctx.accounts.bid_usdc.amount;
+        token::transfer_checked(CpiContext::new(ctx.accounts.token_program.key(), token::TransferChecked {
+            from: ctx.accounts.bidder_source.to_account_info(), mint: ctx.accounts.usdc_mint.to_account_info(),
+            to: ctx.accounts.bid_usdc.to_account_info(), authority: ctx.accounts.bidder.to_account_info(),
+        }), cap, 6)?;
+        ctx.accounts.bid_usdc.reload()?;
+        require!(ctx.accounts.bid_usdc.amount.checked_sub(before) == Some(cap), SpanError::DepositMismatch);
+        ctx.accounts.bid.set_inner(Bid { ticket: t.key(), bidder: ctx.accounts.bidder.key(), ask, cap, until,
+            span_amount: 0, step_bps: 0, marker: Pubkey::default(), bump: ctx.bumps.bid,
+            usdc_bump: ctx.bumps.bid_usdc, span_bump: 0 });
+        emit_cpi!(BidPlaced { ticket: t.key(), id: t.id, t0: t.t0, bid: ctx.accounts.bid.key(), bidder: ctx.accounts.bidder.key(), ask, cap, until });
+        Ok(())
+    }
+
+    pub fn bid_span(ctx: Context<BidSpan>, amount: u64, step_bps: u16, marker: Pubkey) -> Result<()> {
+        require!(ctx.accounts.gate.config.span_mint.is_some(), SpanError::SpanNotSet);
+        require!(ctx.accounts.gate.bid.span_amount == 0, SpanError::AlreadyLoaded);
+        require!([2, 5, 10, 25].contains(&step_bps), SpanError::StepNotAllowed);
+        require!(amount >= ctx.accounts.gate.config.burn_per_mark, SpanError::InvalidValue);
+        let before = ctx.accounts.bid_span.amount;
+        token_interface::transfer_checked(CpiContext::new(ctx.accounts.span_token_program.key(), token_interface::TransferChecked {
+            from: ctx.accounts.span_source.to_account_info(), mint: ctx.accounts.span_mint.to_account_info(),
+            to: ctx.accounts.bid_span.to_account_info(), authority: ctx.accounts.gate.bidder.to_account_info(),
+        }), amount, ctx.accounts.span_mint.decimals)?;
+        ctx.accounts.bid_span.reload()?;
+        require!(ctx.accounts.bid_span.amount.checked_sub(before) == Some(amount), SpanError::DepositMismatch);
+        let reserve = Rent::get()?.minimum_balance(ctx.accounts.bid_span.to_account_info().data_len());
+        anchor_lang::system_program::transfer(CpiContext::new(ctx.accounts.system_program.key(), anchor_lang::system_program::Transfer {
+            from: ctx.accounts.gate.bidder.to_account_info(), to: ctx.accounts.gate.bid.to_account_info(),
+        }), reserve)?;
+        let b = &mut ctx.accounts.gate.bid;
+        b.span_amount = amount; b.step_bps = step_bps; b.marker = marker; b.span_bump = ctx.bumps.bid_span;
+        emit_cpi!(events::BidSpan { bid: b.key(), amount, step_bps, marker });
+        Ok(())
+    }
+
+    pub fn accept_bid(ctx: Context<AcceptBid>) -> Result<()> {
+        let t = &ctx.accounts.ticket;
+        let c = &ctx.accounts.candle;
+        let bid = &ctx.accounts.bid;
+        require!(t.state == TicketState::Sold, SpanError::NotSold);
+        require!(t.buyer == Some(ctx.accounts.holder.key()), SpanError::NotHolder);
+        require_keys_neq!(bid.bidder, ctx.accounts.holder.key(), SpanError::InvalidValue);
+        require!(ctx.accounts.resale.data_is_empty(), SpanError::ResaleOpen);
+        require!(c.reads[0].price > 0, SpanError::NoOpen);
+        let clock = Clock::get()?;
+        require!(clock.unix_timestamp <= bid.until, SpanError::BuyClosed);
+        let asset = math::window(c.t0)?.0;
+        require_keys_eq!(ctx.accounts.feed.key(), oracle::feed_of(ctx.accounts.config.feed, asset)?, SpanError::FeedNotConfig);
+        let elapsed = clock.unix_timestamp.checked_sub(c.t0).ok_or(SpanError::Overflow)?;
+        let j = elapsed / 300;
+        if (0..=i64::from(math::window(c.t0)?.2)).contains(&j) {
+            let boundary = math::add_time(c.t0, j * 300)?;
+            require!(c.reads[j as usize].price > 0 || clock.unix_timestamp > math::add_time(boundary, i64::from(c.read_window) + i64::from(c.age_limit))?, SpanError::ReadPending);
+        }
+        let price = oracle::peek(&ctx.accounts.feed.to_account_info(), asset)?;
+        for k in 1..=usize::from(math::window(c.t0)?.2) {
+            let boundary = math::add_time(c.t0, k as i64 * 300)?;
+            require!(c.reads[k].price > 0 || price.publish_ts < boundary || price.publish_ts > math::add_time(boundary, i64::from(c.read_window))? || i128::from(clock.unix_timestamp) - i128::from(price.publish_ts) > i128::from(c.age_limit), SpanError::ReadPending);
+        }
+        let (high, low) = t.high_low(c);
+        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps)?;
+        require!(recorded < VAULT_CAP, SpanError::CapReached);
+        let paid = recorded.checked_add(bid.ask).ok_or(SpanError::Overflow)?;
+        require!(paid <= bid.cap, SpanError::PriceAboveMax);
+        let balance = ctx.accounts.bid_usdc.amount;
+        require!(balance >= bid.cap, SpanError::DepositMismatch);
+        let refund = bid.cap.checked_sub(paid).ok_or(SpanError::Overflow)?;
+        let extra = balance.checked_sub(bid.cap).ok_or(SpanError::Overflow)?;
+        let ticket_key = t.key();
+        let bid_bump = [bid.bump];
+        let bid_seeds: &[&[u8]] = &[b"bid", ticket_key.as_ref(), bid.bidder.as_ref(), &bid_bump];
+        let before = ctx.accounts.holder_usdc.amount;
+        token::transfer_checked(CpiContext::new_with_signer(ctx.accounts.token_program.key(), token::TransferChecked {
+            from: ctx.accounts.bid_usdc.to_account_info(), mint: ctx.accounts.usdc_mint.to_account_info(),
+            to: ctx.accounts.holder_usdc.to_account_info(), authority: bid.to_account_info(),
+        }, &[bid_seeds]), paid, 6)?;
+        ctx.accounts.holder_usdc.reload()?;
+        require!(ctx.accounts.holder_usdc.amount.checked_sub(before) == Some(paid), SpanError::DepositMismatch);
+        token::transfer_checked(CpiContext::new_with_signer(ctx.accounts.token_program.key(), token::TransferChecked {
+            from: ctx.accounts.bid_usdc.to_account_info(), mint: ctx.accounts.usdc_mint.to_account_info(),
+            to: ctx.accounts.bidder_usdc.to_account_info(), authority: bid.to_account_info(),
+        }, &[bid_seeds]), balance.checked_sub(paid).ok_or(SpanError::Overflow)?, 6)?;
+        token::close_account(CpiContext::new_with_signer(ctx.accounts.token_program.key(), token::CloseAccount {
+            account: ctx.accounts.bid_usdc.to_account_info(), destination: ctx.accounts.bidder.to_account_info(), authority: bid.to_account_info(),
+        }, &[bid_seeds]))?;
+        let mut span_returned = 0u64;
+        let mut span_loaded = 0u64;
+        let mut span_bump = 0u8;
+        let mut reimbursement = 0u64;
+        if t.span_loaded > 0 || bid.span_amount > 0 {
+            let mint = ctx.accounts.span_mint.as_ref().ok_or(SpanError::MissingAccount)?;
+            let program = ctx.accounts.span_token_program.as_ref().ok_or(SpanError::MissingAccount)?;
+            let hold = ctx.accounts.span_hold.as_ref().ok_or(SpanError::MissingAccount)?;
+            let (expected, bump) = Pubkey::find_program_address(&[b"span", ticket_key.as_ref()], &crate::ID);
+            require_keys_eq!(hold.key(), expected, SpanError::WrongOwner);
+            require_keys_eq!(*mint.to_account_info().owner, program.key(), SpanError::UnsupportedTokenProgram);
+            if t.span_loaded > 0 {
+                span_returned = bid_token_balance(&hold.to_account_info(), mint.key(), ticket_key, program.key())?;
+                let id_bytes = t.id.to_le_bytes(); let ticket_bump = [t.bump];
+                let ticket_seeds: &[&[u8]] = &[b"ticket", &id_bytes, &ticket_bump];
+                if span_returned > 0 {
+                    let destination = ctx.accounts.holder_span.as_ref().ok_or(SpanError::MissingAccount)?;
+                    bid_token_balance(&destination.to_account_info(), mint.key(), ctx.accounts.holder.key(), program.key())?;
+                    token_interface::transfer_checked(CpiContext::new_with_signer(program.key(), token_interface::TransferChecked {
+                        from: hold.to_account_info(), mint: mint.to_account_info(), to: destination.to_account_info(), authority: t.to_account_info(),
+                    }, &[ticket_seeds]), span_returned, mint.decimals)?;
+                }
+                token_interface::close_account(CpiContext::new_with_signer(program.key(), token_interface::CloseAccount {
+                    account: hold.to_account_info(), destination: ctx.accounts.holder.to_account_info(), authority: t.to_account_info(),
+                }, &[ticket_seeds]))?;
+            }
+            if bid.span_amount > 0 {
+                let escrow = ctx.accounts.bid_span.as_ref().ok_or(SpanError::MissingAccount)?;
+                span_loaded = bid_token_balance(&escrow.to_account_info(), mint.key(), bid.key(), program.key())?;
+                require_keys_eq!(*hold.owner, anchor_lang::system_program::ID, SpanError::InvalidValue);
+                require!(hold.data_is_empty(), SpanError::InvalidValue);
+                let size = escrow.to_account_info().data_len();
+                let rent = Rent::get()?;
+                let minimum = rent.minimum_balance(size);
+                let cost = minimum.saturating_sub(hold.lamports());
+                let hold_bump = [bump];
+                let hold_seeds: &[&[u8]] = &[b"span", ticket_key.as_ref(), &hold_bump];
+                if hold.lamports() == 0 {
+                    anchor_lang::system_program::create_account(CpiContext::new_with_signer(ctx.accounts.system_program.key(), anchor_lang::system_program::CreateAccount {
+                        from: ctx.accounts.holder.to_account_info(), to: hold.to_account_info(),
+                    }, &[hold_seeds]), minimum, size as u64, &program.key())?;
+                } else {
+                    if cost > 0 {
+                        anchor_lang::system_program::transfer(CpiContext::new(ctx.accounts.system_program.key(), anchor_lang::system_program::Transfer {
+                            from: ctx.accounts.holder.to_account_info(), to: hold.to_account_info(),
+                        }), cost)?;
+                    }
+                    anchor_lang::system_program::allocate(CpiContext::new_with_signer(ctx.accounts.system_program.key(), anchor_lang::system_program::Allocate { account_to_allocate: hold.to_account_info() }, &[hold_seeds]), size as u64)?;
+                    anchor_lang::system_program::assign(CpiContext::new_with_signer(ctx.accounts.system_program.key(), anchor_lang::system_program::Assign { account_to_assign: hold.to_account_info() }, &[hold_seeds]), &program.key())?;
+                }
+                token_interface::initialize_account3(CpiContext::new(program.key(), token_interface::InitializeAccount3 {
+                    account: hold.to_account_info(), mint: mint.to_account_info(), authority: t.to_account_info(),
+                }))?;
+                let remaining = bid.to_account_info().lamports().checked_sub(cost).ok_or(SpanError::InvalidValue)?;
+                require!(remaining >= rent.minimum_balance(8 + Bid::INIT_SPACE), SpanError::InvalidValue);
+                reimbursement = cost;
+                token_interface::transfer_checked(CpiContext::new_with_signer(program.key(), token_interface::TransferChecked {
+                    from: escrow.to_account_info(), mint: mint.to_account_info(), to: hold.to_account_info(), authority: bid.to_account_info(),
+                }, &[bid_seeds]), span_loaded, mint.decimals)?;
+                token_interface::close_account(CpiContext::new_with_signer(program.key(), token_interface::CloseAccount {
+                    account: escrow.to_account_info(), destination: ctx.accounts.bidder.to_account_info(), authority: bid.to_account_info(),
+                }, &[bid_seeds]))?;
+                span_bump = bump;
+            }
+        }
+        let reads = c.reads.iter().enumerate().fold(0u16, |bits, (j, r)| if r.price > 0 { bits | (1u16 << j) } else { bits });
+        let t = &mut ctx.accounts.ticket;
+        t.buyer = Some(bid.bidder); t.span_loaded = span_loaded; t.span_bump = span_bump;
+        t.step_bps = if bid.span_amount > 0 { bid.step_bps } else { 0 };
+        t.marker = if bid.span_amount > 0 { bid.marker } else { Pubkey::default() };
+        emit_cpi!(BidAccepted { ticket: t.key(), id: t.id, t0: t.t0, bid: bid.key(), from: ctx.accounts.holder.key(), to: bid.bidder,
+            ask: bid.ask, cap: bid.cap, recorded, paid, refund, extra, high, low, tail_high: t.tail_high, tail_low: t.tail_low,
+            reads, marks: t.marks, burned: t.burned, span_returned, span_loaded, step_bps: t.step_bps, marker: t.marker, slot: clock.slot });
+        // Apply the balanced native refund after the last CPI; neither side is partially synchronized into a CPI.
+        if reimbursement > 0 {
+            let remaining = bid.to_account_info().lamports().checked_sub(reimbursement).ok_or(SpanError::InvalidValue)?;
+            let holder_lamports = ctx.accounts.holder.lamports().checked_add(reimbursement).ok_or(SpanError::Overflow)?;
+            **bid.to_account_info().try_borrow_mut_lamports()? = remaining;
+            **ctx.accounts.holder.to_account_info().try_borrow_mut_lamports()? = holder_lamports;
+        }
+        Ok(())
+    }
+
+    pub fn close_bid(ctx: Context<CloseBid>) -> Result<()> {
+        let bid = &ctx.accounts.bid;
+        if ctx.accounts.ticket.owner == &crate::ID && !ctx.accounts.ticket.data_is_empty() && Clock::get()?.unix_timestamp <= bid.until {
+            require_keys_eq!(ctx.accounts.closer.key(), bid.bidder, SpanError::NotBidder);
+        }
+        let ticket = bid.ticket; let bidder = bid.bidder; let bump = [bid.bump];
+        let seeds: &[&[u8]] = &[b"bid", ticket.as_ref(), bidder.as_ref(), &bump];
+        let usdc = ctx.accounts.bid_usdc.amount;
+        token::transfer_checked(CpiContext::new_with_signer(ctx.accounts.token_program.key(), token::TransferChecked {
+            from: ctx.accounts.bid_usdc.to_account_info(), mint: ctx.accounts.usdc_mint.to_account_info(),
+            to: ctx.accounts.bidder_usdc.to_account_info(), authority: bid.to_account_info(),
+        }, &[seeds]), usdc, ctx.accounts.usdc_mint.decimals)?;
+        token::close_account(CpiContext::new_with_signer(ctx.accounts.token_program.key(), token::CloseAccount {
+            account: ctx.accounts.bid_usdc.to_account_info(), destination: ctx.accounts.bidder.to_account_info(), authority: bid.to_account_info(),
+        }, &[seeds]))?;
+        let mut span = 0;
+        if bid.span_amount > 0 {
+            let escrow = ctx.accounts.bid_span.as_ref().ok_or(SpanError::MissingAccount)?;
+            let mint = ctx.accounts.span_mint.as_ref().ok_or(SpanError::MissingAccount)?;
+            let program = ctx.accounts.span_token_program.as_ref().ok_or(SpanError::MissingAccount)?;
+            let destination = ctx.accounts.bidder_span.as_ref().ok_or(SpanError::MissingAccount)?;
+            require_keys_eq!(*mint.to_account_info().owner, program.key(), SpanError::UnsupportedTokenProgram);
+            span = bid_token_balance(&escrow.to_account_info(), mint.key(), bid.key(), program.key())?;
+            bid_token_balance(&destination.to_account_info(), mint.key(), bidder, program.key())?;
+            token_interface::transfer_checked(CpiContext::new_with_signer(program.key(), token_interface::TransferChecked {
+                from: escrow.to_account_info(), mint: mint.to_account_info(), to: destination.to_account_info(), authority: bid.to_account_info(),
+            }, &[seeds]), span, mint.decimals)?;
+            token_interface::close_account(CpiContext::new_with_signer(program.key(), token_interface::CloseAccount {
+                account: escrow.to_account_info(), destination: ctx.accounts.bidder.to_account_info(), authority: bid.to_account_info(),
+            }, &[seeds]))?;
+        }
+        emit_cpi!(BidClosed { ticket, bid: bid.key(), bidder, closer: ctx.accounts.closer.key(), usdc, span });
         Ok(())
     }
 
@@ -1047,4 +1259,13 @@ fn close_usdc<'info>(
         },
         seeds,
     ))
+}
+
+fn bid_token_balance(account: &AccountInfo, mint: Pubkey, authority: Pubkey, program: Pubkey) -> Result<u64> {
+    require_keys_eq!(*account.owner, program, SpanError::UnsupportedTokenProgram);
+    let bytes = account.try_borrow_data()?;
+    let token = token_interface::TokenAccount::try_deserialize(&mut &bytes[..])?;
+    require_keys_eq!(token.mint, mint, SpanError::WrongMint);
+    require_keys_eq!(token.owner, authority, SpanError::WrongOwner);
+    Ok(token.amount)
 }

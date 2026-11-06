@@ -26,6 +26,10 @@ const decoders = {
   ResaleListed: generated.getResaleListedEventDecoder(),
   Resold: generated.getResoldEventDecoder(),
   ResaleClosed: generated.getResaleClosedEventDecoder(),
+  BidPlaced: generated.getBidPlacedEventDecoder(),
+  BidSpan: generated.getBidSpanEventDecoder(),
+  BidAccepted: generated.getBidAcceptedEventDecoder(),
+  BidClosed: generated.getBidClosedEventDecoder(),
 };
 export type DecodedSpanEvent = {
   [K in keyof typeof decoders]: {

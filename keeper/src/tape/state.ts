@@ -177,6 +177,9 @@ export function liveDocuments(
         until: (()=>{const u=[...(chain.untils?.values() ?? [])].find(x=>x.value.ticket===address);return u?String(u.value.until):null;})(),
         entry: entryOf(history,address),
         resale: (()=>{const offer=[...(chain.resales?.values()??[])].find(x=>x.value.ticket===address)?.value;return offer?{holder:offer.holder,ask:String(offer.ask),until:String(offer.until)}:null;})(),
+        bids: [...(chain.bids??[])].filter(([,x])=>x.value.ticket===address)
+          .sort(([a,x],[b,y])=>x.value.ask===y.value.ask?(a<b?-1:a>b?1:0):x.value.ask>y.value.ask?-1:1)
+          .map(([bid,{value:b}])=>({bid,bidder:b.bidder,ask:String(b.ask),cap:String(b.cap),until:String(b.until),span:b.spanAmount>0n?{amount:String(b.spanAmount),stepBps:b.stepBps,marker:b.marker}:null})),
         transfers: transfersOf(history,address),
         asset: nameOf(assetOf(t.t0)),
         id: String(t.id),

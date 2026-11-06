@@ -212,3 +212,28 @@ pub struct ResaleClosed {
     pub holder: Pubkey,
     pub closer: Pubkey,
 }
+
+#[event]
+pub struct BidPlaced {
+    pub ticket: Pubkey, pub id: u64, pub t0: i64, pub bid: Pubkey, pub bidder: Pubkey,
+    pub ask: u64, pub cap: u64, pub until: i64,
+}
+#[event]
+pub struct BidSpan {
+    pub bid: Pubkey, pub amount: u64, pub step_bps: u16, pub marker: Pubkey,
+}
+#[event]
+pub struct BidAccepted {
+    pub ticket: Pubkey, pub id: u64, pub t0: i64, pub bid: Pubkey,
+    pub from: Pubkey, pub to: Pubkey, pub ask: u64, pub cap: u64,
+    pub recorded: u64, pub paid: u64, pub refund: u64, pub extra: u64,
+    pub high: u64, pub low: u64, pub tail_high: u64, pub tail_low: u64,
+    pub reads: u16, pub marks: u32, pub burned: u64,
+    pub span_returned: u64, pub span_loaded: u64, pub step_bps: u16,
+    pub marker: Pubkey, pub slot: u64,
+}
+#[event]
+pub struct BidClosed {
+    pub ticket: Pubkey, pub bid: Pubkey, pub bidder: Pubkey, pub closer: Pubkey,
+    pub usdc: u64, pub span: u64,
+}

@@ -1,3 +1,4 @@
+import {beforeBid} from './bid-compat.js';
 import {expect,it,vi} from 'vitest';
 import {existsSync,mkdirSync,mkdtempSync,readFileSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -71,7 +72,7 @@ for(const auto of [false,true])it(`runs six real candle lifecycles through the p
   Object.assign(oldPublisher.chain,projected);
   for(const table of ['doves','gaps','coverage','hour_reason']){oldStore!.db.exec(`DELETE FROM ${table}`);const rows=store.db.prepare(`SELECT * FROM ${table}`).all()as any[];for(const row of rows){if(table==='hour_reason'&&!legacyStart(row.t0))continue;const keys=Object.keys(row);oldStore!.db.prepare(`INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`).run(...keys.map(k=>row[k]));}}
   const oldDocs=oldState.liveDocuments(oldPublisher.chain,oldHistory,()=>0),newDocs=liveDocuments(chain,history,()=>0);
-  expect(JSON.stringify(newDocs)).toBe(JSON.stringify(oldDocs));
+  expect(JSON.stringify(beforeBid(newDocs))).toBe(JSON.stringify(oldDocs));
   for(const method of ['feedDocument','hoursDocument','historyDocument'])expect(JSON.stringify((publisher as any)[method]())).toBe(JSON.stringify(oldPublisher[method]()));
   for(const t of refs.slice(0,3))expect(JSON.stringify(publisher.candlePathBody(Number(t.t0)))).toBe(JSON.stringify(oldPublisher.candlePathBody(Number(t.t0))));
  };
@@ -152,8 +153,8 @@ it.skipIf(!process.env.SPAN_HALF_HOUR_PREVIOUS_KEEPER||!process.env.SPAN_HALF_HO
  const oldState=await import(pathToFileURL(resolve(previous,'src/tape/state.ts')).href),oldPublisher=await import(pathToFileURL(resolve(previous,'src/tape/publish.ts')).href),before=new oldPublisher.Publisher(store,chain,history,recorder,join(dir,'old'),()=>0,[t.t0]),after=new Publisher(store,chain,history,recorder,join(dir,'new'),()=>0,[t.t0]);
  const execute=async(ixs:any[])=>{const tx=await h.transaction(ixs,h.marker),row=capture(h,Buffer.from(getTransactionEncoder().encode(tx)).toString('base64'));expect(row.tx.meta.err).toBe(null);history.ingest(row.signature,row.tx);};
  try{h.clock(t.t0);h.price(prices[0],t.t0);await execute([h.readIx(t,0)]);h.clock(t.t0+60n);h.price(prices[0]*101n/100n,t.t0+60n);await execute([h.markIx(t)]);chain.candles.get(t.candle).value=h.candleState(t);chain.tickets.get(t.ticket).value=h.ticketState(t);vi.spyOn(Date,'now').mockReturnValue(1800000000000);
-  expect(JSON.stringify(liveDocuments(chain,history,()=>0))).toBe(JSON.stringify(oldState.liveDocuments(chain,history,()=>0)));
+  expect(JSON.stringify(beforeBid(liveDocuments(chain,history,()=>0)))).toBe(JSON.stringify(oldState.liveDocuments(chain,history,()=>0)));
   h.clock(s.settleAfter(h.candleState(t)));await execute([h.settleIx(t)]);chain.tickets.clear();recorder.startRecording(1100);recorder.sample('read',prices[0],t.t0,1);recorder.sample('mark',prices[0]*101n/100n,t.t0+60n,2);recorder.closeGaps();recorder.cover(5000);before.publish();after.publish();
-  for(const file of ['state.json','tickets.json','feed.json','history.json','hours.json',`candles/${t.t0}.json`])expect(readFileSync(join(dir,'new',file))).toEqual(readFileSync(join(dir,'old',file)));
+  for(const file of ['state.json','tickets.json','feed.json','history.json','hours.json',`candles/${t.t0}.json`])expect(Buffer.from(JSON.stringify(beforeBid(JSON.parse(readFileSync(join(dir,'new',file),'utf8'))))+'\n')).toEqual(readFileSync(join(dir,'old',file)));
  }finally{vi.restoreAllMocks();store.close();}
 });

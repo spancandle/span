@@ -8,7 +8,8 @@ type Schema =
   | { nullable: Schema }
   | { array: Schema }
   | { record: Schema }
-  | { object: Record<string, Schema> };
+  | { object: Record<string, Schema> }
+  | { tag: string; cases: Record<string,Schema> };
 const object = (fields: Record<string, Schema>): Schema => ({ object: fields }),
   array = (item: Schema): Schema => ({ array: item }),
   nullable = (item: Schema): Schema => ({ nullable: item });
@@ -30,7 +31,9 @@ const mark = object({
   );
 const entry = nullable(object({sig:"string",at:nullable("integerString"),publishTs:"integerString",price:"integerString",recorded:"integerString",paid:"integerString"}));
 const resale=nullable(object({holder:"string",ask:"integerString",until:"integerString"}));
-const transfers=array(object({sig:"string",at:nullable("integerString"),from:"string",to:"string",ask:"integerString",recorded:"integerString",paid:"integerString",spanReturned:"integerString"}));
+const transferFields={sig:"string",at:nullable("integerString"),from:"string",to:"string",ask:"integerString",recorded:"integerString",paid:"integerString",spanReturned:"integerString",via:"string"} as const;
+const transfers=array({tag:"via",cases:{resale:object({...transferFields}),bid:object({...transferFields,cap:"integerString",refund:"integerString",extra:"integerString"})}});
+const bids=array(object({bid:"string",bidder:"string",ask:"integerString",cap:"integerString",until:"integerString",span:nullable(object({amount:"integerString",stepBps:"number",marker:"string"}))}));
 export const schemas: Record<string, Schema> = {
   state: object({
     v: "number",
@@ -89,6 +92,9 @@ export const schemas: Record<string, Schema> = {
     tickets: array(
       object({
         address: "string",
+        resale,
+        transfers,
+        bids,
         asset: "string",
         id: "integerString",
         t0: "integerString",
@@ -287,6 +293,7 @@ function validate(value: any, schema: Schema, path: string) {
     );
     return;
   }
+  if('tag' in schema){const selected=schema.cases[value?.[schema.tag]];expect(selected,path).toBeDefined();validate(value,selected,path);return;}
   if('record' in schema){expect(value,path).toBeTypeOf('object');for(const [key,v]of Object.entries(value))validate(v,schema.record,`${path}.${key}`);return;}
   expect(value, path).toBeTypeOf("object");
   for (const [key, s] of Object.entries(schema.object)) {

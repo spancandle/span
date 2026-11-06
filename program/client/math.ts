@@ -85,3 +85,6 @@ export function readPending(c: CandlePrices, now: bigint, feed: {price: bigint; 
     feed.publishTs >= boundary(c.t0, k) && feed.publishTs <= boundary(c.t0, k) + BigInt(c.readWindow) &&
     now - feed.publishTs <= BigInt(c.ageLimit));
 }
+
+/** The recorded payout plus the price offered for the remaining candle. */
+export const bidPaid=(c:CandlePrices,t:TicketPrices,ask:bigint):bigint=>resaleRecorded(c,t)+ask;

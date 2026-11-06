@@ -48,4 +48,6 @@ pub enum SpanError {
     PriceAboveMax,
     NotHolder,
     ReadPending,
+    NotBidder,
+    ResaleOpen,
 }

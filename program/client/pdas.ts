@@ -35,3 +35,9 @@ export const findResalePda = (ticket: Address) =>
     programAddress: SPAN_PROGRAM_ADDRESS,
     seeds: ["resale", getAddressEncoder().encode(ticket)],
   });
+
+export const findBidPda = (ticket: Address, bidder: Address) => getProgramDerivedAddress({
+  programAddress: SPAN_PROGRAM_ADDRESS, seeds: ["bid", getAddressEncoder().encode(ticket), getAddressEncoder().encode(bidder)],
+});
+export const findBidUsdcPda = (bid: Address) => getProgramDerivedAddress({programAddress:SPAN_PROGRAM_ADDRESS,seeds:["bid_usdc",getAddressEncoder().encode(bid)]});
+export const findBidSpanPda = (bid: Address) => getProgramDerivedAddress({programAddress:SPAN_PROGRAM_ADDRESS,seeds:["bid_span",getAddressEncoder().encode(bid)]});

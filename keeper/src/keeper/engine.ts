@@ -13,6 +13,7 @@ import type { FeedValue } from "../common/feed.js";
 import type { Action, Prepared } from "./sender.js";
 import type { CreationBudget } from "./budget.js";
 import { log, type Logger } from "../common/log.js";
+export class BidderAccountUnavailable extends Error {}
 export type EnginePort = {
   blockhash: () => string | undefined;
   price: (action: Action) => bigint;
@@ -42,7 +43,7 @@ export class Engine {
     readonly chain: Pick<
       Chain,
       "candles" | "tickets" | "config" | "feed" | "now"
-    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils" | "resales">>,
+    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils" | "resales" | "bids">>,
     readonly keeper: Address,
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
@@ -191,6 +192,14 @@ export class Engine {
     for (const [resale,{value}] of this.chain.resales ?? [])
       if (!this.chain.tickets.has(value.ticket))
         out.push({key:`closeResale:${resale}`,kind:"closeResale",resale,t0:0n});
+    for (const [bid,{value}] of this.chain.bids ?? [])
+      if (!this.chain.tickets.has(value.ticket) || now > value.until + 2n)
+        out.push({key:`closeBid:${bid}`,kind:"closeBid",bid,t0:0n});
+    for (const [key,p] of [...this.pending,...this.prepared])
+      if (p.action.kind === "closeBid") {
+        const value = this.chain.bids?.get(p.action.bid as Address)?.value;
+        if (!value || (this.chain.tickets.has(value.ticket) && now <= value.until + 2n)) this.complete(key);
+      }
     for (const [key,p] of [...this.pending,...this.prepared])
       if (p.action.kind === "closeResale") {
         const value = this.chain.resales?.get(p.action.resale as Address)?.value;
@@ -254,6 +263,10 @@ export class Engine {
     return false;
   }
   private eligible(a: Action) {
+    if (a.kind === "closeBid") {
+      const value=this.chain.bids?.get(a.bid as Address)?.value;
+      return !!value && (!this.chain.tickets.has(value.ticket) || this.chain.now() > value.until + 2n);
+    }
     if (a.kind === "closeResale") {
       const value=this.chain.resales?.get(a.resale as Address)?.value;
       return !!value && !this.chain.tickets.has(value.ticket);
@@ -287,7 +300,7 @@ export class Engine {
     if (this.closed) return;
     const actions = this.actions();
     for (const a of actions) {
-        if (a.kind === "closeResale") continue;
+        if (a.kind === "closeResale" || a.kind === "closeBid") continue;
         if (a.kind === "closeUntil") continue;
         const v=this.feed(a.t0);
         if (a.kind !== "mark" || !v) continue;
@@ -318,7 +331,7 @@ export class Engine {
         }
       }
     for (const a of actions) {
-      const v=a.kind === "closeResale" ? undefined : a.kind === "closeUntil" ? undefined : this.feed(a.t0);
+      const v=(a.kind === "closeResale" || a.kind === "closeBid") ? undefined : a.kind === "closeUntil" ? undefined : this.feed(a.t0);
       if (a.kind === "read" && v) {
         const b = boundary(a.t0, a.j!),
           c = this.candle(a);
@@ -377,8 +390,10 @@ export class Engine {
           this.update();
         }
       })
-      .catch(() => {
-        this.next.set(a.key, Date.now() + 2000);
+      .catch((error) => {
+        const delay = a.kind === "closeBid" && error instanceof BidderAccountUnavailable
+          ? 600000 : 2000;
+        this.next.set(a.key, Date.now() + delay);
       })
       .finally(() => this.preparing.delete(a.key));
   }
@@ -399,7 +414,7 @@ export class Engine {
       if (error === "BuyClosed") this.abandoned.add(p.action.key);
       this.next.set(p.action.key, Date.now() + 2000);
     }
-    if (p.action.kind === "settle" || p.action.kind === "closeUntil" || p.action.kind === "closeResale")
+    if (p.action.kind === "settle" || p.action.kind === "closeUntil" || (p.action.kind === "closeResale" || p.action.kind === "closeBid"))
       this.next.set(p.action.key, Date.now() + 2000);
     if (error === "AlreadyProcessed") {
       if (p.action.kind === "mark") this.marked.delete(p.action.key);

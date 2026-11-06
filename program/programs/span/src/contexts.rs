@@ -462,3 +462,139 @@ pub struct CloseResale<'info> {
     pub ticket: UncheckedAccount<'info>,
     pub closer: Signer<'info>,
 }
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct PlaceBid<'info> {
+    #[account(mut)]
+    pub bidder: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(seeds = [b"ticket", &ticket.id.to_le_bytes()], bump = ticket.bump,
+        constraint = ticket.t0 == candle.t0 @ SpanError::InvalidValue)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(init, payer = bidder, space = 8 + Bid::INIT_SPACE,
+        seeds = [b"bid", ticket.key().as_ref(), bidder.key().as_ref()], bump)]
+    pub bid: Box<Account<'info, Bid>>,
+    #[account(init, payer = bidder, seeds = [b"bid_usdc", bid.key().as_ref()], bump,
+        token::mint = usdc_mint, token::authority = bid)]
+    pub bid_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = bidder_source.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = bidder_source.owner == bidder.key() @ SpanError::WrongOwner)]
+    pub bidder_source: Box<Account<'info, UsdcAccount>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct BidSpanGate<'info> {
+    #[account(mut)]
+    pub bidder: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump,
+        constraint = config.span_mint.is_some() @ SpanError::SpanNotSet)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(mut, seeds = [b"bid", bid.ticket.as_ref(), bid.bidder.as_ref()], bump = bid.bump,
+        constraint = bid.bidder == bidder.key() @ SpanError::NotBidder,
+        constraint = bid.span_amount == 0 @ SpanError::AlreadyLoaded)]
+    pub bid: Box<Account<'info, Bid>>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct BidSpan<'info> {
+    pub gate: BidSpanGate<'info>,
+    #[account(init, payer = gate.bidder, seeds = [b"bid_span", gate.bid.key().as_ref()], bump,
+        token::mint = span_mint, token::authority = gate.bid, token::token_program = span_token_program)]
+    pub bid_span: Box<InterfaceAccount<'info, SpanAccount>>,
+    #[account(address = gate.config.span_mint.ok_or(SpanError::SpanNotSet)? @ SpanError::WrongMint)]
+    pub span_mint: Box<InterfaceAccount<'info, SpanMint>>,
+    #[account(mut, constraint = span_source.mint == span_mint.key() @ SpanError::WrongMint,
+        constraint = span_source.owner == gate.bidder.key() @ SpanError::WrongOwner)]
+    pub span_source: Box<InterfaceAccount<'info, SpanAccount>>,
+    #[account(address = gate.config.span_token_program.ok_or(SpanError::SpanNotSet)? @ SpanError::UnsupportedTokenProgram)]
+    pub span_token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct AcceptBid<'info> {
+    #[account(mut)]
+    pub holder: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(mut, seeds = [b"ticket", &ticket.id.to_le_bytes()], bump = ticket.bump,
+        constraint = ticket.t0 == candle.t0 @ SpanError::InvalidValue)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(mut, close = bidder, seeds = [b"bid", ticket.key().as_ref(), bid.bidder.as_ref()], bump = bid.bump,
+        constraint = bid.ticket == ticket.key() @ SpanError::InvalidValue)]
+    pub bid: Box<Account<'info, Bid>>,
+    /// CHECK: the stored bidder receives refunds and rent.
+    #[account(mut, address = bid.bidder @ SpanError::ReceiverMismatch)]
+    pub bidder: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"bid_usdc", bid.key().as_ref()], bump = bid.usdc_bump,
+        constraint = bid_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = bid_usdc.owner == bid.key() @ SpanError::WrongOwner)]
+    pub bid_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = bidder_usdc.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = bidder_usdc.owner == bid.bidder @ SpanError::WrongOwner)]
+    pub bidder_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, dup, constraint = holder_usdc.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = holder_usdc.owner == holder.key() @ SpanError::WrongOwner)]
+    pub holder_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    /// CHECK: feed address and data are checked in the handler.
+    pub feed: UncheckedAccount<'info>,
+    /// CHECK: the canonical offer must have no data.
+    #[account(seeds = [b"resale", ticket.key().as_ref()], bump)]
+    pub resale: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    #[account(address = config.span_mint.ok_or(SpanError::SpanNotSet)? @ SpanError::WrongMint)]
+    pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
+    #[account(address = config.span_token_program.ok_or(SpanError::SpanNotSet)? @ SpanError::UnsupportedTokenProgram)]
+    pub span_token_program: Option<Interface<'info, TokenInterface>>,
+    /// CHECK: checked, closed and optionally initialized again in the handler.
+    #[account(mut)]
+    pub span_hold: Option<UncheckedAccount<'info>>,
+    #[account(mut, dup)]
+    pub holder_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    #[account(mut, seeds = [b"bid_span", bid.key().as_ref()], bump = bid.span_bump)]
+    pub bid_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct CloseBid<'info> {
+    pub closer: Signer<'info>,
+    #[account(mut, close = bidder, seeds = [b"bid", bid.ticket.as_ref(), bid.bidder.as_ref()], bump = bid.bump)]
+    pub bid: Box<Account<'info, Bid>>,
+    /// CHECK: bound to the bidder who receives every refund.
+    #[account(mut, address = bid.bidder @ SpanError::ReceiverMismatch)]
+    pub bidder: UncheckedAccount<'info>,
+    /// CHECK: bound address; owner and data select the live-ticket authorization.
+    #[account(address = bid.ticket @ SpanError::InvalidValue)]
+    pub ticket: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"bid_usdc", bid.key().as_ref()], bump = bid.usdc_bump,
+        constraint = bid_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = bid_usdc.owner == bid.key() @ SpanError::WrongOwner)]
+    pub bid_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = bidder_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = bidder_usdc.owner == bid.bidder @ SpanError::WrongOwner)]
+    pub bidder_usdc: Box<Account<'info, UsdcAccount>>,
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    #[account(mut, seeds = [b"bid_span", bid.key().as_ref()], bump = bid.span_bump)]
+    pub bid_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    #[account(mut)]
+    pub bidder_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
+    pub span_token_program: Option<Interface<'info, TokenInterface>>,
+}

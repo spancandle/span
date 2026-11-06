@@ -1,3 +1,4 @@
+import {beforeBid} from './bid-compat.js';
 import {expect,it,vi} from 'vitest';
 import {existsSync,mkdtempSync,mkdirSync,readFileSync,writeFileSync,appendFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -101,7 +102,7 @@ it('recovers a stale pre-resale holding cache after one actual SpanShort and a f
 it.skipIf(!process.env.SPAN_RESALE_PREVIOUS_KEEPER||!process.env.SPAN_RESALE_PREVIOUS_BINARY)('retains every previous public value on 1.13.0 with only null offers and empty transfers added',async()=>{
  const previous=process.env.SPAN_RESALE_PREVIOUS_KEEPER,binary=process.env.SPAN_RESALE_PREVIOUS_BINARY;if(!previous||!binary)return;
  const h=await Harness.create({binary,setSpan:true}),t=await h.open({loaded:true}),chain={rpc:{cluster:'mainnet'},config:h.configState(),candles:new Map([[t.candle,{value:h.candleState(t),slot:1,data:''}]]),tickets:new Map([[t.ticket,{value:h.ticketState(t),slot:1,data:''}]]),untils:new Map(),resales:new Map(),now:()=>1300n,slot:1}as unknown as Chain,history={events:()=>[]}as any,old=await import(pathToFileURL(resolve(previous,'src/tape/state.ts')).href);vi.spyOn(Date,'now').mockReturnValue(1800000000000);
- try{const before=old.liveDocuments(chain,history),after=liveDocuments(chain,history);for(const row of after.tickets.tickets){expect(row.resale).toBe(null);expect(row.transfers).toEqual([]);delete(row as any).resale;delete(row as any).transfers;}expect(after).toEqual(before);
+ try{const before=old.liveDocuments(chain,history),after=beforeBid(liveDocuments(chain,history));for(const row of after.tickets.tickets){expect(row.resale).toBe(null);expect(row.transfers).toEqual([]);delete(row as any).resale;delete(row as any).transfers;}expect(after).toEqual(before);
   const dir=mkdtempSync(join(tmpdir(),'span-resale-legacy-')),store=new Store(':memory:'),archive=new History(store,{cluster:'mainnet'}as any,()=>{}),recorder=new DovesRecorder(store,{cluster:'mainnet'}as any),oldPublisher=await import(pathToFileURL(resolve(previous,'src/tape/publish.ts')).href);
   const record=async(ixs:any[],payer=h.marker)=>{const tx=await h.transaction(ixs,payer),row=capture(h,Buffer.from(getTransactionEncoder().encode(tx)).toString('base64'));expect(row.tx.meta.err).toBe(null);archive.ingest(row.signature,row.tx);};
   try{h.clock(t.t0);h.price(P0,t.t0);await record([h.readIx(t,0)]);h.clock(t.t0+60n);h.price(P0*101n/100n,t.t0+60n);await record([h.markIx(t)]);chain.candles.set(t.candle,{value:h.candleState(t),slot:1,data:''});chain.tickets.set(t.ticket,{value:h.ticketState(t),slot:1,data:''});h.clock(s.settleAfter(h.candleState(t)));await record([h.settleIx(t)]);chain.now=()=>h.svm.getClock().unixTimestamp;

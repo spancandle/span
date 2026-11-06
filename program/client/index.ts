@@ -8,6 +8,9 @@ export {
   findEventAuthorityPda,
   findUntilPda,
   findResalePda,
+  findBidPda,
+  findBidUsdcPda,
+  findBidSpanPda,
 } from "./pdas.js";
 export * from "./math.js";
 export * from "./oracle.js";

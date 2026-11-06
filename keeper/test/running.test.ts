@@ -1,3 +1,4 @@
+import {beforeBid} from './bid-compat.js';
 import {expect,it,vi} from 'vitest';
 import {existsSync,mkdtempSync,readFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
@@ -91,7 +92,7 @@ for(const markAfterEntry of [false,true])it(`production decisions and tape handl
 it.skipIf(!process.env.SPAN_PREVIOUS_KEEPER)('keeps every old public value on a 1.12.0 state, adding only null until and entry',async()=>{
  const h=await Harness.create({binary:process.env.SPAN_PREVIOUS_BINARY,setSpan:true}),t=await h.open({loaded:true}),chain={rpc:{cluster:'mainnet'},config:h.configState(),candles:new Map([[t.candle,{value:h.candleState(t),slot:1,data:''}]]),tickets:new Map([[t.ticket,{value:h.ticketState(t),slot:1,data:''}]]),untils:new Map(),now:()=>1300n,slot:1} as unknown as Chain;
  const history={events:()=>[]} as any,old=await import(pathToFileURL(resolve(process.env.SPAN_PREVIOUS_KEEPER!,'src/tape/state.ts')).href);vi.spyOn(Date,'now').mockReturnValue(1800000000000);
- try{const before=old.liveDocuments(chain,history),after=liveDocuments(chain,history);for(const row of after.tickets.tickets){expect(row.until).toBe(null);expect(row.entry).toBe(null);delete(row as any).until;delete(row as any).entry;expect(row.resale).toBe(null);expect(row.transfers).toEqual([]);delete(row as any).resale;delete(row as any).transfers;}expect(after).toEqual(before);
+ try{const before=old.liveDocuments(chain,history),after=beforeBid(liveDocuments(chain,history));for(const row of after.tickets.tickets){expect(row.until).toBe(null);expect(row.entry).toBe(null);delete(row as any).until;delete(row as any).entry;expect(row.resale).toBe(null);expect(row.transfers).toEqual([]);delete(row as any).resale;delete(row as any).transfers;}expect(after).toEqual(before);
   const dir=mkdtempSync(join(tmpdir(),'span-legacy-publish-')),store=new Store(':memory:'),archive=new History(store,{cluster:'mainnet'} as any,()=>{}),recorder=new DovesRecorder(store,{cluster:'mainnet'} as any),oldModule=await import(pathToFileURL(resolve(process.env.SPAN_PREVIOUS_KEEPER!,'src/tape/publish.ts')).href);
   try{
    h.clock(t.t0);h.price(P0,t.t0);archive.ingest('old-read',await driver(h,[h.readIx(t,0)]));h.clock(t.t0+30n);h.price(P0*101n/100n,t.t0+30n);archive.ingest('old-mark',await driver(h,[h.markIx(t)],h.marker));chain.candles.set(t.candle,{value:h.candleState(t),slot:1,data:''});chain.tickets.set(t.ticket,{value:h.ticketState(t),slot:1,data:''});

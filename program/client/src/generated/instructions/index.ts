@@ -6,9 +6,12 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./acceptBid.js";
+export * from "./bidSpan.js";
 export * from "./buy.js";
 export * from "./buyResale.js";
 export * from "./buyRunning.js";
+export * from "./closeBid.js";
 export * from "./closeResale.js";
 export * from "./closeUntil.js";
 export * from "./init.js";
@@ -18,6 +21,7 @@ export * from "./mark.js";
 export * from "./openCandle.js";
 export * from "./openRunning.js";
 export * from "./openTicket.js";
+export * from "./placeBid.js";
 export * from "./read.js";
 export * from "./setFeed.js";
 export * from "./setMarker.js";

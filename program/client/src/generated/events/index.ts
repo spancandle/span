@@ -6,6 +6,10 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./bidAccepted.js";
+export * from "./bidClosed.js";
+export * from "./bidPlaced.js";
+export * from "./bidSpan.js";
 export * from "./bought.js";
 export * from "./boughtRunning.js";
 export * from "./candleOpened.js";
