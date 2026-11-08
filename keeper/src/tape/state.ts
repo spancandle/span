@@ -80,7 +80,7 @@ export function markLog(history: History, ticket: string) {
 }
 /** The entry is separate from SPAN marks; its tails are already part of the ticket. */
 export function entryOf(history: History, ticket: string) {
-  const e = history.events("BoughtRunning").find(x=>x.ticket===ticket);
+  const e = [...history.events("BoughtRunning"),...history.events("RequestFilled").filter(x=>x.kind===2)].find(x=>x.ticket===ticket);
   return e ? {sig:e.sig,at:e.blockTime,publishTs:e.publishTs,price:e.price,recorded:e.recorded,paid:e.paid} : null;
 }
 /** Without a holding read, only burns since the last transfer belong to the current load. */
@@ -172,6 +172,10 @@ export function liveDocuments(
     tickets: {
       v: version,
       generated: Date.now(),
+      ...(version===2?{requests:[...(chain.requests??[])].sort(([a,x],[b,y])=>{
+        for(const key of ['t0','strikeBps','ask'] as const)if(x.value[key]!==y.value[key])return x.value[key]>y.value[key]?-1:1;
+        return a<b?-1:a>b?1:0;
+      }).map(([request,{value:r}])=>({request,requester:r.requester,t0:String(r.t0),secs:Number(secsOf(r.t0)),asset:nameOf(assetOf(r.t0)),strikeBps:r.strikeBps,ask:String(r.ask),cap:String(r.cap),until:String(r.until),minRoom:String(r.minRoom),span:r.spanAmount>0n?{amount:String(r.spanAmount),stepBps:r.stepBps,marker:r.marker}:null}))}:{}),
       tickets: tickets.map(([address, { value: t }]) => ({
         address,
         until: (()=>{const u=[...(chain.untils?.values() ?? [])].find(x=>x.value.ticket===address);return u?String(u.value.until):null;})(),

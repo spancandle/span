@@ -39,7 +39,7 @@ pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16) -> Result<u64> {
 }
 ```
 
-A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L896-L907):
+A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L1247-L1258):
 
 ```rust
 let (high, low) = t.high_low(candle);
@@ -98,6 +98,7 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | Until | Optional per ticket: the time its seller keeps it for sale inside its hour |
 | Resale | Optional per ticket: its buyer's price for the rest of the hour and the time the offer stands |
 | Bid | Optional per ticket and bidder: a price for the rest of the hour, the most the bidder will pay, the time the bid stands, the USDC behind it and any SPAN to load |
+| Request | Optional per candle start, ticket length and requester: a price for the rest of the hour, the most the requester will pay, the time the request stands, the least room left to 40 USDC it accepts, the USDC behind it and any SPAN to load |
 | Vault | Ticket's classic Token USDC account |
 | SPAN holding account | Ticket's unburned SPAN |
 
@@ -128,8 +129,14 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | bid_span | BidSpan | Add SPAN, a step and a reader to your bid, to be loaded onto the ticket if the bid is taken; bidder only |
 | accept_bid | BidAccepted | After the opening reading, take a bid on your ticket: receive what the candle has recorded plus the bid's price, return the rest of its USDC to the bidder, make the bidder the ticket's buyer and load its SPAN; buyer only |
 | close_bid | BidClosed | Withdraw a bid with its USDC and SPAN (bidder), or return them once its time has passed or the ticket is closed (anyone) |
+| place_request | RequestPlaced | Ask for a ticket of a candle and length without choosing one: a price for the rest of its hour, the most you will pay, a time and the least room left to 40 USDC you accept, with that most held in USDC by the request; the candle need not exist yet |
+| request_span | RequestSpan | Add SPAN, a step and a reader to your request, to be loaded onto the ticket it is filled with; requester only |
+| fill_request_held | RequestFilled | After the opening reading, fill a request with your ticket of its candle and length, as `accept_bid` takes a bid; buyer only |
+| fill_request_open | TicketOpened, RequestFilled | Before the buying cutoff, fill a request with a new ticket at its price: you put in 40 USDC less the price and the request pays the price; anyone but the requester |
+| fill_request_running | TicketOpened, RequestFilled | After the opening reading, fill a request with a new ticket bought as with `buy_running`; anyone but the requester |
+| close_request | RequestClosed | Withdraw a request with its USDC and SPAN (requester), or return them once its time has passed (anyone) |
 
-First loading and reader changes are allowed through the candle's end plus `age_limit`, inclusive: `t0 + 3600 + age_limit`, or `t0 + 1800 + age_limit` on a 30-minute candle. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. A resale returns the holder's SPAN and clears the reader; the recorded tails, mark count and burned amount stay with the ticket. Taking a bid does the same, then loads the bid's SPAN with its step and reader. Buying and selling still close at the buying cutoff, except for a ticket opened with `open_running`.
+First loading and reader changes are allowed through the candle's end plus `age_limit`, inclusive: `t0 + 3600 + age_limit`, or `t0 + 1800 + age_limit` on a 30-minute candle. Changing the reader preserves the recorded tails, mark count, burned amount and token balance. A resale returns the holder's SPAN and clears the reader; the recorded tails, mark count and burned amount stay with the ticket. Taking a bid does the same, then loads the bid's SPAN with its step and reader. Filling a request with a held ticket does the same, and a ticket opened to fill a request starts with the request's SPAN, step and reader. Buying and selling still close at the buying cutoff, except for a ticket opened with `open_running`.
 
 ## Buying inside the hour
 
@@ -143,9 +150,13 @@ A ticket's buyer can offer it with `list_resale` at a price, 0.10 to 39 USDC, un
 
 Anyone but a ticket's buyer can bid for it with `place_bid`: a price for the rest of the hour, 0.10 to 39 USDC, the most they will pay in all, and a time no later than the candle's end. The bid holds that most in USDC, and `bid_span` can add SPAN with a step and a reader. After the opening reading, the buyer can take a bid with `accept_bid`. A is computed as in `buy_resale`, from the high and low recorded so far, and the bid waits under the same rule while a scheduled read can still be filled. The buyer receives A plus the bid's price, never more than the bid's most; the bidder gets the rest of its USDC back and becomes the ticket's buyer. The buyer's unburned SPAN and the lamports of its holding account go back to the buyer, and in the same transaction the bid's SPAN is loaded into a new holding account whose rent the bid set aside. A recorded high or low never shrinks, so A only grows while a bid stands and the final payout cannot fall below it. A buyer with an open resale offer closes it before taking a bid. The vault does not move, so the seller's side is unchanged.
 
+## Requesting a ticket
+
+Anyone can ask for a ticket without choosing one with `place_request`: a candle start, which names its asset and its length, a ticket length, a price for the rest of the hour, 0.10 to 39 USDC, the most they will pay in all, a time no later than the candle's end, and the least room left to 40 USDC they will accept. The request holds that most in USDC, the candle need not exist yet, and `request_span` can add SPAN with a step and a reader. A request is filled once, with one ticket, in one of three ways. After the opening reading, the buyer of a ticket of that candle and length can fill it with `fill_request_held`, under the rules and price of `accept_bid`. Before the buying cutoff, a seller can fill it with `fill_request_open`: a new ticket at the request's price, the seller putting in 40 USDC less that price and the request paying the price, as `open_ticket` and `buy` would. After the opening reading, a seller can fill it with `fill_request_running`: a new ticket bought as with `buy_running`, with the current DOVES price in A. Each way, the requester pays no more than the request's most, the ticket keeps at least the requested room below 40 USDC, the requester becomes the ticket's buyer, and the request's SPAN is loaded in the same transaction. The rest of the USDC goes back to the requester. A seller's risk on a ticket opened this way is the same as on any ticket: at most 40 USDC less its price.
+
 ## Settlement
 
-Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. A ticket that changed hands through a bid settles the same way. Settlement is available after the candle's end, the read window, the age limit and one second.
+Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. A ticket that changed hands through a bid settles the same way. So does a ticket filled for a request. Settlement is available after the candle's end, the read window, the age limit and one second.
 
 ## Authority
 

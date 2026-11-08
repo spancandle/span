@@ -38,6 +38,7 @@ import {
   getBidCodec,
   getCandleCodec,
   getConfigCodec,
+  getRequestCodec,
   getResaleCodec,
   getTicketCodec,
   getUntilCodec,
@@ -47,6 +48,8 @@ import {
   type CandleArgs,
   type Config,
   type ConfigArgs,
+  type Request,
+  type RequestArgs,
   type Resale,
   type ResaleArgs,
   type Ticket,
@@ -61,8 +64,12 @@ import {
   getBuyResaleInstructionAsync,
   getBuyRunningInstructionAsync,
   getCloseBidInstructionAsync,
+  getCloseRequestInstructionAsync,
   getCloseResaleInstruction,
   getCloseUntilInstruction,
+  getFillRequestHeldInstructionAsync,
+  getFillRequestOpenInstructionAsync,
+  getFillRequestRunningInstructionAsync,
   getInitInstructionAsync,
   getListResaleInstructionAsync,
   getLoadSpanInstructionAsync,
@@ -71,7 +78,9 @@ import {
   getOpenRunningInstructionAsync,
   getOpenTicketInstructionAsync,
   getPlaceBidInstructionAsync,
+  getPlaceRequestInstructionAsync,
   getReadInstructionAsync,
+  getRequestSpanInstructionAsync,
   getSetFeedInstructionAsync,
   getSetMarkerInstructionAsync,
   getSetParamsInstructionAsync,
@@ -84,8 +93,12 @@ import {
   parseBuyResaleInstruction,
   parseBuyRunningInstruction,
   parseCloseBidInstruction,
+  parseCloseRequestInstruction,
   parseCloseResaleInstruction,
   parseCloseUntilInstruction,
+  parseFillRequestHeldInstruction,
+  parseFillRequestOpenInstruction,
+  parseFillRequestRunningInstruction,
   parseInitInstruction,
   parseListResaleInstruction,
   parseLoadSpanInstruction,
@@ -94,7 +107,9 @@ import {
   parseOpenRunningInstruction,
   parseOpenTicketInstruction,
   parsePlaceBidInstruction,
+  parsePlaceRequestInstruction,
   parseReadInstruction,
+  parseRequestSpanInstruction,
   parseSetFeedInstruction,
   parseSetMarkerInstruction,
   parseSetParamsInstruction,
@@ -107,8 +122,12 @@ import {
   type BuyResaleAsyncInput,
   type BuyRunningAsyncInput,
   type CloseBidAsyncInput,
+  type CloseRequestAsyncInput,
   type CloseResaleInput,
   type CloseUntilInput,
+  type FillRequestHeldAsyncInput,
+  type FillRequestOpenAsyncInput,
+  type FillRequestRunningAsyncInput,
   type InitAsyncInput,
   type ListResaleAsyncInput,
   type LoadSpanAsyncInput,
@@ -122,8 +141,12 @@ import {
   type ParsedBuyResaleInstruction,
   type ParsedBuyRunningInstruction,
   type ParsedCloseBidInstruction,
+  type ParsedCloseRequestInstruction,
   type ParsedCloseResaleInstruction,
   type ParsedCloseUntilInstruction,
+  type ParsedFillRequestHeldInstruction,
+  type ParsedFillRequestOpenInstruction,
+  type ParsedFillRequestRunningInstruction,
   type ParsedInitInstruction,
   type ParsedListResaleInstruction,
   type ParsedLoadSpanInstruction,
@@ -132,7 +155,9 @@ import {
   type ParsedOpenRunningInstruction,
   type ParsedOpenTicketInstruction,
   type ParsedPlaceBidInstruction,
+  type ParsedPlaceRequestInstruction,
   type ParsedReadInstruction,
+  type ParsedRequestSpanInstruction,
   type ParsedSetFeedInstruction,
   type ParsedSetMarkerInstruction,
   type ParsedSetParamsInstruction,
@@ -140,7 +165,9 @@ import {
   type ParsedSettleInstruction,
   type ParsedWithdrawInstruction,
   type PlaceBidAsyncInput,
+  type PlaceRequestAsyncInput,
   type ReadAsyncInput,
+  type RequestSpanAsyncInput,
   type SetFeedAsyncInput,
   type SetMarkerAsyncInput,
   type SetParamsAsyncInput,
@@ -154,6 +181,9 @@ import {
   findBidUsdcPda,
   findCandlePda,
   findConfigPda,
+  findRequestPda,
+  findRequestSpanPda,
+  findRequestUsdcPda,
   findResalePda,
   findTicketPda,
   findUntilPda,
@@ -167,6 +197,7 @@ export enum SpanAccount {
   Bid,
   Candle,
   Config,
+  Request,
   Resale,
   Ticket,
   Until,
@@ -208,6 +239,17 @@ export function identifySpanAccount(
     )
   ) {
     return SpanAccount.Config;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([125, 172, 150, 161, 162, 115, 39, 71]),
+      ),
+      0,
+    )
+  ) {
+    return SpanAccount.Request;
   }
   if (
     containsBytes(
@@ -262,6 +304,10 @@ export enum SpanEvent {
   MarkerSet,
   ParamsSet,
   Read,
+  RequestClosed,
+  RequestFilled,
+  RequestPlaced,
+  RequestSpan,
   ResaleClosed,
   ResaleListed,
   Resold,
@@ -425,6 +471,50 @@ export function identifySpanEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([59, 172, 99, 75, 9, 19, 226, 188]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.RequestClosed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([89, 111, 161, 194, 214, 229, 51, 5]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.RequestFilled;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([202, 138, 240, 57, 207, 84, 109, 181]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.RequestPlaced;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([163, 208, 132, 9, 102, 58, 152, 47]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.RequestSpan;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([14, 111, 94, 1, 238, 73, 83, 36]),
       ),
       0,
@@ -543,8 +633,12 @@ export enum SpanInstruction {
   BuyResale,
   BuyRunning,
   CloseBid,
+  CloseRequest,
   CloseResale,
   CloseUntil,
+  FillRequestHeld,
+  FillRequestOpen,
+  FillRequestRunning,
   Init,
   ListResale,
   LoadSpan,
@@ -553,7 +647,9 @@ export enum SpanInstruction {
   OpenRunning,
   OpenTicket,
   PlaceBid,
+  PlaceRequest,
   Read,
+  RequestSpan,
   SetFeed,
   SetMarker,
   SetParams,
@@ -636,6 +732,17 @@ export function identifySpanInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([170, 46, 165, 120, 223, 102, 115, 2]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.CloseRequest;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([38, 49, 232, 150, 255, 83, 91, 30]),
       ),
       0,
@@ -653,6 +760,39 @@ export function identifySpanInstruction(
     )
   ) {
     return SpanInstruction.CloseUntil;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([164, 99, 30, 232, 61, 84, 237, 58]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.FillRequestHeld;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([208, 146, 192, 16, 88, 151, 29, 12]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.FillRequestOpen;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([60, 40, 135, 21, 94, 204, 104, 189]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.FillRequestRunning;
   }
   if (
     containsBytes(
@@ -746,12 +886,34 @@ export function identifySpanInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([98, 175, 140, 31, 98, 46, 123, 0]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.PlaceRequest;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([116, 184, 159, 206, 179, 224, 178, 42]),
       ),
       0,
     )
   ) {
     return SpanInstruction.Read;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([70, 51, 227, 57, 149, 113, 212, 88]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.RequestSpan;
   }
   if (
     containsBytes(
@@ -845,11 +1007,23 @@ export type ParsedSpanInstruction<
       instructionType: SpanInstruction.CloseBid;
     } & ParsedCloseBidInstruction<TProgram>)
   | ({
+      instructionType: SpanInstruction.CloseRequest;
+    } & ParsedCloseRequestInstruction<TProgram>)
+  | ({
       instructionType: SpanInstruction.CloseResale;
     } & ParsedCloseResaleInstruction<TProgram>)
   | ({
       instructionType: SpanInstruction.CloseUntil;
     } & ParsedCloseUntilInstruction<TProgram>)
+  | ({
+      instructionType: SpanInstruction.FillRequestHeld;
+    } & ParsedFillRequestHeldInstruction<TProgram>)
+  | ({
+      instructionType: SpanInstruction.FillRequestOpen;
+    } & ParsedFillRequestOpenInstruction<TProgram>)
+  | ({
+      instructionType: SpanInstruction.FillRequestRunning;
+    } & ParsedFillRequestRunningInstruction<TProgram>)
   | ({
       instructionType: SpanInstruction.Init;
     } & ParsedInitInstruction<TProgram>)
@@ -875,8 +1049,14 @@ export type ParsedSpanInstruction<
       instructionType: SpanInstruction.PlaceBid;
     } & ParsedPlaceBidInstruction<TProgram>)
   | ({
+      instructionType: SpanInstruction.PlaceRequest;
+    } & ParsedPlaceRequestInstruction<TProgram>)
+  | ({
       instructionType: SpanInstruction.Read;
     } & ParsedReadInstruction<TProgram>)
+  | ({
+      instructionType: SpanInstruction.RequestSpan;
+    } & ParsedRequestSpanInstruction<TProgram>)
   | ({
       instructionType: SpanInstruction.SetFeed;
     } & ParsedSetFeedInstruction<TProgram>)
@@ -943,6 +1123,13 @@ export function parseSpanInstruction<TProgram extends string>(
         ...parseCloseBidInstruction(instruction),
       };
     }
+    case SpanInstruction.CloseRequest: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.CloseRequest,
+        ...parseCloseRequestInstruction(instruction),
+      };
+    }
     case SpanInstruction.CloseResale: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -955,6 +1142,27 @@ export function parseSpanInstruction<TProgram extends string>(
       return {
         instructionType: SpanInstruction.CloseUntil,
         ...parseCloseUntilInstruction(instruction),
+      };
+    }
+    case SpanInstruction.FillRequestHeld: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.FillRequestHeld,
+        ...parseFillRequestHeldInstruction(instruction),
+      };
+    }
+    case SpanInstruction.FillRequestOpen: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.FillRequestOpen,
+        ...parseFillRequestOpenInstruction(instruction),
+      };
+    }
+    case SpanInstruction.FillRequestRunning: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.FillRequestRunning,
+        ...parseFillRequestRunningInstruction(instruction),
       };
     }
     case SpanInstruction.Init: {
@@ -1013,11 +1221,25 @@ export function parseSpanInstruction<TProgram extends string>(
         ...parsePlaceBidInstruction(instruction),
       };
     }
+    case SpanInstruction.PlaceRequest: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.PlaceRequest,
+        ...parsePlaceRequestInstruction(instruction),
+      };
+    }
     case SpanInstruction.Read: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: SpanInstruction.Read,
         ...parseReadInstruction(instruction),
+      };
+    }
+    case SpanInstruction.RequestSpan: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.RequestSpan,
+        ...parseRequestSpanInstruction(instruction),
       };
     }
     case SpanInstruction.SetFeed: {
@@ -1085,6 +1307,8 @@ export type SpanPluginAccounts = {
     SelfFetchFunctions<CandleArgs, Candle>;
   config: ReturnType<typeof getConfigCodec> &
     SelfFetchFunctions<ConfigArgs, Config>;
+  request: ReturnType<typeof getRequestCodec> &
+    SelfFetchFunctions<RequestArgs, Request>;
   resale: ReturnType<typeof getResaleCodec> &
     SelfFetchFunctions<ResaleArgs, Resale>;
   ticket: ReturnType<typeof getTicketCodec> &
@@ -1116,12 +1340,28 @@ export type SpanPluginInstructions = {
     input: CloseBidAsyncInput,
   ) => ReturnType<typeof getCloseBidInstructionAsync> &
     SelfPlanAndSendFunctions;
+  closeRequest: (
+    input: CloseRequestAsyncInput,
+  ) => ReturnType<typeof getCloseRequestInstructionAsync> &
+    SelfPlanAndSendFunctions;
   closeResale: (
     input: CloseResaleInput,
   ) => ReturnType<typeof getCloseResaleInstruction> & SelfPlanAndSendFunctions;
   closeUntil: (
     input: CloseUntilInput,
   ) => ReturnType<typeof getCloseUntilInstruction> & SelfPlanAndSendFunctions;
+  fillRequestHeld: (
+    input: FillRequestHeldAsyncInput,
+  ) => ReturnType<typeof getFillRequestHeldInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  fillRequestOpen: (
+    input: FillRequestOpenAsyncInput,
+  ) => ReturnType<typeof getFillRequestOpenInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  fillRequestRunning: (
+    input: FillRequestRunningAsyncInput,
+  ) => ReturnType<typeof getFillRequestRunningInstructionAsync> &
+    SelfPlanAndSendFunctions;
   init: (
     input: InitAsyncInput,
   ) => ReturnType<typeof getInitInstructionAsync> & SelfPlanAndSendFunctions;
@@ -1152,9 +1392,17 @@ export type SpanPluginInstructions = {
     input: PlaceBidAsyncInput,
   ) => ReturnType<typeof getPlaceBidInstructionAsync> &
     SelfPlanAndSendFunctions;
+  placeRequest: (
+    input: PlaceRequestAsyncInput,
+  ) => ReturnType<typeof getPlaceRequestInstructionAsync> &
+    SelfPlanAndSendFunctions;
   read: (
     input: ReadAsyncInput,
   ) => ReturnType<typeof getReadInstructionAsync> & SelfPlanAndSendFunctions;
+  requestSpan: (
+    input: RequestSpanAsyncInput,
+  ) => ReturnType<typeof getRequestSpanInstructionAsync> &
+    SelfPlanAndSendFunctions;
   setFeed: (
     input: SetFeedAsyncInput,
   ) => ReturnType<typeof getSetFeedInstructionAsync> & SelfPlanAndSendFunctions;
@@ -1185,9 +1433,12 @@ export type SpanPluginPdas = {
   bidSpan: typeof findBidSpanPda;
   vault: typeof findVaultPda;
   until: typeof findUntilPda;
-  candle: typeof findCandlePda;
+  requestUsdc: typeof findRequestUsdcPda;
+  requestSpan: typeof findRequestSpanPda;
   ticket: typeof findTicketPda;
+  candle: typeof findCandlePda;
   bid: typeof findBidPda;
+  request: typeof findRequestPda;
 };
 
 export type SpanPluginRequirements = ClientWithRpc<
@@ -1207,6 +1458,7 @@ export function spanProgram() {
           bid: addSelfFetchFunctions(client, getBidCodec()),
           candle: addSelfFetchFunctions(client, getCandleCodec()),
           config: addSelfFetchFunctions(client, getConfigCodec()),
+          request: addSelfFetchFunctions(client, getRequestCodec()),
           resale: addSelfFetchFunctions(client, getResaleCodec()),
           ticket: addSelfFetchFunctions(client, getTicketCodec()),
           until: addSelfFetchFunctions(client, getUntilCodec()),
@@ -1239,6 +1491,11 @@ export function spanProgram() {
               client,
               getCloseBidInstructionAsync(input),
             ),
+          closeRequest: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getCloseRequestInstructionAsync(input),
+            ),
           closeResale: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1248,6 +1505,21 @@ export function spanProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getCloseUntilInstruction(input),
+            ),
+          fillRequestHeld: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getFillRequestHeldInstructionAsync(input),
+            ),
+          fillRequestOpen: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getFillRequestOpenInstructionAsync(input),
+            ),
+          fillRequestRunning: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getFillRequestRunningInstructionAsync(input),
             ),
           init: (input) =>
             addSelfPlanAndSendFunctions(client, getInitInstructionAsync(input)),
@@ -1286,8 +1558,18 @@ export function spanProgram() {
               client,
               getPlaceBidInstructionAsync(input),
             ),
+          placeRequest: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getPlaceRequestInstructionAsync(input),
+            ),
           read: (input) =>
             addSelfPlanAndSendFunctions(client, getReadInstructionAsync(input)),
+          requestSpan: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRequestSpanInstructionAsync(input),
+            ),
           setFeed: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1326,9 +1608,12 @@ export function spanProgram() {
           bidSpan: findBidSpanPda,
           vault: findVaultPda,
           until: findUntilPda,
-          candle: findCandlePda,
+          requestUsdc: findRequestUsdcPda,
+          requestSpan: findRequestSpanPda,
           ticket: findTicketPda,
+          candle: findCandlePda,
           bid: findBidPda,
+          request: findRequestPda,
         },
         identifyAccount: identifySpanAccount,
         identifyInstruction: identifySpanInstruction,

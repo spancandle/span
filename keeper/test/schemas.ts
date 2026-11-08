@@ -32,7 +32,7 @@ const mark = object({
 const entry = nullable(object({sig:"string",at:nullable("integerString"),publishTs:"integerString",price:"integerString",recorded:"integerString",paid:"integerString"}));
 const resale=nullable(object({holder:"string",ask:"integerString",until:"integerString"}));
 const transferFields={sig:"string",at:nullable("integerString"),from:"string",to:"string",ask:"integerString",recorded:"integerString",paid:"integerString",spanReturned:"integerString",via:"string"} as const;
-const transfers=array({tag:"via",cases:{resale:object({...transferFields}),bid:object({...transferFields,cap:"integerString",refund:"integerString",extra:"integerString"})}});
+const transfers=array({tag:"via",cases:{resale:object({...transferFields}),bid:object({...transferFields,cap:"integerString",refund:"integerString",extra:"integerString"}),request:object({...transferFields,cap:"integerString",refund:"integerString",extra:"integerString",minRoom:"integerString"})}});
 const bids=array(object({bid:"string",bidder:"string",ask:"integerString",cap:"integerString",until:"integerString",span:nullable(object({amount:"integerString",stepBps:"number",marker:"string"}))}));
 export const schemas: Record<string, Schema> = {
   state: object({
@@ -309,3 +309,6 @@ export function validateDocument(name: string, value: any) {
   if (name === "feed")
     expect(value.ts.split(",").length).toBe(value.p.split(",").length);
 }
+
+export const requestRows = array(object({request:"string",requester:"string",t0:"integerString",secs:"number",asset:"string",strikeBps:"number",ask:"integerString",cap:"integerString",until:"integerString",minRoom:"integerString",span:nullable(object({amount:"integerString",stepBps:"number",marker:"string"}))}));
+export function validateRequests(value:any){expect(value.v).toBe(2);validate(value.requests,requestRows,'requests');}

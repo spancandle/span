@@ -22,12 +22,12 @@ export function orderResales<T extends Snapshot>(events:readonly T[],firstHolder
 }
 
 export function resaleEventsOf(history:Pick<History,'events'>,ticket:string){
- const events=[...history.events('Resold').map(e=>({...e,via:'resale' as const})),...history.events('BidAccepted').map(e=>({...e,via:'bid' as const}))].filter(e=>e.ticket===ticket);
+ const events=[...history.events('Resold').map(e=>({...e,via:'resale' as const})),...history.events('BidAccepted').map(e=>({...e,via:'bid' as const})),...history.events('RequestFilled').filter(e=>e.kind===0).map(e=>({...e,via:'request' as const}))].filter(e=>e.ticket===ticket);
  if(!events.length)return [];
- const purchase=[...history.events('Bought'),...history.events('BoughtRunning')].find(e=>e.ticket===ticket);
+ const purchase=[...history.events('Bought'),...history.events('BoughtRunning'),...history.events('RequestFilled').filter(e=>e.kind===1||e.kind===2).map(e=>({...e,buyer:e.to}))].find(e=>e.ticket===ticket);
  if(!purchase)throw Error('Initial buyer unavailable');
  return orderResales(events,purchase.buyer);
 }
 export function transfersOf(history:Pick<History,'events'>,ticket:string){
- return resaleEventsOf(history,ticket).map(e=>({sig:e.sig,at:e.blockTime,from:e.from,to:e.to,ask:e.ask,recorded:e.recorded,paid:e.paid,spanReturned:e.spanReturned,via:e.via,...(e.via==='bid'?{cap:e.cap,refund:e.refund,extra:e.extra}:{})}));
+ return resaleEventsOf(history,ticket).map(e=>({sig:e.sig,at:e.blockTime,from:e.from,to:e.to,ask:e.ask,recorded:e.recorded,paid:e.paid,spanReturned:e.spanReturned,via:e.via,...(e.via==='bid'||e.via==='request'?{cap:e.cap,refund:e.refund,extra:e.extra,...(e.via==='request'?{minRoom:e.minRoom}:{})}:{})}));
 }

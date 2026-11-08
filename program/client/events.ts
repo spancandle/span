@@ -30,6 +30,10 @@ const decoders = {
   BidSpan: generated.getBidSpanEventDecoder(),
   BidAccepted: generated.getBidAcceptedEventDecoder(),
   BidClosed: generated.getBidClosedEventDecoder(),
+  RequestPlaced: generated.getRequestPlacedEventDecoder(),
+  RequestSpan: generated.getRequestSpanEventDecoder(),
+  RequestFilled: generated.getRequestFilledEventDecoder(),
+  RequestClosed: generated.getRequestClosedEventDecoder(),
 };
 export type DecodedSpanEvent = {
   [K in keyof typeof decoders]: {

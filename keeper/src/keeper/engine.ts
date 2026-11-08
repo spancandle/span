@@ -43,7 +43,7 @@ export class Engine {
     readonly chain: Pick<
       Chain,
       "candles" | "tickets" | "config" | "feed" | "now"
-    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils" | "resales" | "bids">>,
+    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils" | "resales" | "bids" | "requests">>,
     readonly keeper: Address,
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
@@ -195,6 +195,14 @@ export class Engine {
     for (const [bid,{value}] of this.chain.bids ?? [])
       if (!this.chain.tickets.has(value.ticket) || now > value.until + 2n)
         out.push({key:`closeBid:${bid}`,kind:"closeBid",bid,t0:0n});
+    for (const [request,{value}] of this.chain.requests ?? [])
+      if (now > value.until + 2n)
+        out.push({key:`closeRequest:${request}`,kind:"closeRequest",request,t0:0n});
+    for (const [key,p] of [...this.pending,...this.prepared])
+      if (p.action.kind === "closeRequest") {
+        const value = this.chain.requests?.get(p.action.request as Address)?.value;
+        if (!value || now <= value.until + 2n) this.complete(key);
+      }
     for (const [key,p] of [...this.pending,...this.prepared])
       if (p.action.kind === "closeBid") {
         const value = this.chain.bids?.get(p.action.bid as Address)?.value;
@@ -263,6 +271,10 @@ export class Engine {
     return false;
   }
   private eligible(a: Action) {
+    if (a.kind === "closeRequest") {
+      const value=this.chain.requests?.get(a.request as Address)?.value;
+      return !!value && this.chain.now() > value.until + 2n;
+    }
     if (a.kind === "closeBid") {
       const value=this.chain.bids?.get(a.bid as Address)?.value;
       return !!value && (!this.chain.tickets.has(value.ticket) || this.chain.now() > value.until + 2n);
@@ -300,7 +312,7 @@ export class Engine {
     if (this.closed) return;
     const actions = this.actions();
     for (const a of actions) {
-        if (a.kind === "closeResale" || a.kind === "closeBid") continue;
+        if (a.kind === "closeResale" || a.kind === "closeBid" || a.kind === "closeRequest") continue;
         if (a.kind === "closeUntil") continue;
         const v=this.feed(a.t0);
         if (a.kind !== "mark" || !v) continue;
@@ -331,7 +343,7 @@ export class Engine {
         }
       }
     for (const a of actions) {
-      const v=(a.kind === "closeResale" || a.kind === "closeBid") ? undefined : a.kind === "closeUntil" ? undefined : this.feed(a.t0);
+      const v=(a.kind === "closeResale" || a.kind === "closeBid" || a.kind === "closeRequest") ? undefined : a.kind === "closeUntil" ? undefined : this.feed(a.t0);
       if (a.kind === "read" && v) {
         const b = boundary(a.t0, a.j!),
           c = this.candle(a);
@@ -391,7 +403,7 @@ export class Engine {
         }
       })
       .catch((error) => {
-        const delay = a.kind === "closeBid" && error instanceof BidderAccountUnavailable
+        const delay = (a.kind === "closeBid" || a.kind === "closeRequest") && error instanceof BidderAccountUnavailable
           ? 600000 : 2000;
         this.next.set(a.key, Date.now() + delay);
       })
@@ -414,7 +426,7 @@ export class Engine {
       if (error === "BuyClosed") this.abandoned.add(p.action.key);
       this.next.set(p.action.key, Date.now() + 2000);
     }
-    if (p.action.kind === "settle" || p.action.kind === "closeUntil" || (p.action.kind === "closeResale" || p.action.kind === "closeBid"))
+    if (p.action.kind === "settle" || p.action.kind === "closeUntil" || (p.action.kind === "closeResale" || p.action.kind === "closeBid" || p.action.kind === "closeRequest"))
       this.next.set(p.action.key, Date.now() + 2000);
     if (error === "AlreadyProcessed") {
       if (p.action.kind === "mark") this.marked.delete(p.action.key);

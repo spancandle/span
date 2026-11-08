@@ -11,6 +11,9 @@ export {
   findBidPda,
   findBidUsdcPda,
   findBidSpanPda,
+  findRequestPda,
+  findRequestUsdcPda,
+  findRequestSpanPda,
 } from "./pdas.js";
 export * from "./math.js";
 export * from "./oracle.js";

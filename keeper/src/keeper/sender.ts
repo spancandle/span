@@ -18,15 +18,17 @@ import type { Subscriptions } from "../common/ws.js";
 import { log, type Logger } from "../common/log.js";
 import type { FeedValue } from "../common/feed.js";
 export const CLOSE_BID_UNITS = 49734;
+export const CLOSE_REQUEST_UNITS = 48798;
 export type Action = {
   key: string;
-  kind: "open" | "read" | "mark" | "settle" | "closeUntil" | "closeResale" | "closeBid";
+  kind: "open" | "read" | "mark" | "settle" | "closeUntil" | "closeResale" | "closeBid" | "closeRequest";
   t0: bigint;
   j?: number;
   ticket?: string;
   until?: string;
   resale?: string;
   bid?: string;
+  request?: string;
   end?: bigint;
 };
 export type Prepared = {
@@ -72,6 +74,7 @@ export async function prepareTransaction(
 ): Promise<Prepared> {
   const limit =
     action.kind === "closeBid" ? CLOSE_BID_UNITS :
+    action.kind === "closeRequest" ? CLOSE_REQUEST_UNITS :
     (action.kind === "closeUntil" || action.kind === "closeResale")
       ? 20000
       : action.kind === "open"
@@ -229,7 +232,7 @@ export class Sender {
             maxRetries: 0,
           },
         ],
-        f.p.action.kind === "settle" || f.p.action.kind === "closeUntil" || (f.p.action.kind === "closeResale" || f.p.action.kind === "closeBid") ? "normal" : "window",
+        f.p.action.kind === "settle" || f.p.action.kind === "closeUntil" || (f.p.action.kind === "closeResale" || f.p.action.kind === "closeBid" || f.p.action.kind === "closeRequest") ? "normal" : "window",
         undefined,
         undefined,
         () => {

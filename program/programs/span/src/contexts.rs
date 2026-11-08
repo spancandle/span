@@ -598,3 +598,229 @@ pub struct CloseBid<'info> {
     pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
     pub span_token_program: Option<Interface<'info, TokenInterface>>,
 }
+
+#[event_cpi]
+#[derive(Accounts)]
+#[instruction(t0: i64, strike_bps: u16)]
+pub struct PlaceRequest<'info> {
+    #[account(mut)]
+    pub requester: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(init, payer = requester, space = 8 + Request::INIT_SPACE,
+        seeds = [b"request".as_ref(), t0.to_le_bytes().as_ref(), strike_bps.to_le_bytes().as_ref(), requester.key().as_ref()], bump)]
+    pub request: Box<Account<'info, Request>>,
+    #[account(init, payer = requester, seeds = [b"request_usdc", request.key().as_ref()], bump,
+        token::mint = usdc_mint, token::authority = request)]
+    pub request_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = requester_source.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = requester_source.owner == requester.key() @ SpanError::WrongOwner)]
+    pub requester_source: Box<Account<'info, UsdcAccount>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+#[derive(Accounts)]
+pub struct RequestSpanGate<'info> {
+    #[account(mut)]
+    pub requester: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump,
+        constraint = config.span_mint.is_some() @ SpanError::SpanNotSet)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(mut, seeds = [b"request", &request.t0.to_le_bytes(), &request.strike_bps.to_le_bytes(), request.requester.as_ref()], bump = request.bump,
+        constraint = request.requester == requester.key() @ SpanError::NotRequester,
+        constraint = request.span_amount == 0 @ SpanError::AlreadyLoaded)]
+    pub request: Box<Account<'info, Request>>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct RequestSpan<'info> {
+    pub gate: RequestSpanGate<'info>,
+    #[account(init, payer = gate.requester, seeds = [b"request_span", gate.request.key().as_ref()], bump,
+        token::mint = span_mint, token::authority = gate.request, token::token_program = span_token_program)]
+    pub request_span: Box<InterfaceAccount<'info, SpanAccount>>,
+    #[account(address = gate.config.span_mint.ok_or(SpanError::SpanNotSet)? @ SpanError::WrongMint)]
+    pub span_mint: Box<InterfaceAccount<'info, SpanMint>>,
+    #[account(mut, constraint = span_source.mint == span_mint.key() @ SpanError::WrongMint,
+        constraint = span_source.owner == gate.requester.key() @ SpanError::WrongOwner)]
+    pub span_source: Box<InterfaceAccount<'info, SpanAccount>>,
+    #[account(address = gate.config.span_token_program.ok_or(SpanError::SpanNotSet)? @ SpanError::UnsupportedTokenProgram)]
+    pub span_token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct FillRequestHeld<'info> {
+    #[account(mut)]
+    pub holder: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(mut, seeds = [b"ticket", &ticket.id.to_le_bytes()], bump = ticket.bump,
+        constraint = ticket.t0 == candle.t0 @ SpanError::InvalidValue)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(mut, close = requester, seeds = [b"request", &request.t0.to_le_bytes(), &request.strike_bps.to_le_bytes(), request.requester.as_ref()], bump = request.bump)]
+    pub request: Box<Account<'info, Request>>,
+    /// CHECK: the stored requester receives refunds and rent.
+    #[account(mut, address = request.requester @ SpanError::ReceiverMismatch)]
+    pub requester: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"request_usdc", request.key().as_ref()], bump = request.usdc_bump,
+        constraint = request_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = request_usdc.owner == request.key() @ SpanError::WrongOwner)]
+    pub request_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = requester_usdc.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = requester_usdc.owner == request.requester @ SpanError::WrongOwner)]
+    pub requester_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, dup, constraint = holder_usdc.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = holder_usdc.owner == holder.key() @ SpanError::WrongOwner)]
+    pub holder_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    /// CHECK: feed address and data are checked in the handler.
+    pub feed: UncheckedAccount<'info>,
+    /// CHECK: the canonical offer must have no data.
+    #[account(seeds = [b"resale", ticket.key().as_ref()], bump)]
+    pub resale: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    #[account(address = config.span_mint.ok_or(SpanError::SpanNotSet)? @ SpanError::WrongMint)]
+    pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
+    #[account(address = config.span_token_program.ok_or(SpanError::SpanNotSet)? @ SpanError::UnsupportedTokenProgram)]
+    pub span_token_program: Option<Interface<'info, TokenInterface>>,
+    /// CHECK: checked, closed and optionally initialized again in the handler.
+    #[account(mut)]
+    pub span_hold: Option<UncheckedAccount<'info>>,
+    #[account(mut, dup)]
+    pub holder_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    #[account(mut, seeds = [b"request_span", request.key().as_ref()], bump = request.span_bump)]
+    pub request_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+}
+
+
+#[event_cpi]
+#[derive(Accounts)]
+#[instruction(id: u64)]
+pub struct FillRequestOpen<'info> {
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    #[account(mut, seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump,
+        constraint = candle.t0 == request.t0 @ SpanError::RequestMismatch)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(init, payer = seller, space = request_ticket_space(&config, id)?, seeds = [b"ticket".as_ref(), id.to_le_bytes().as_ref()], bump)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(init, payer = seller, seeds = [b"vault", ticket.key().as_ref()], bump,
+        token::mint = usdc_mint, token::authority = ticket)]
+    pub vault: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = seller_source.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = seller_source.owner == seller.key() @ SpanError::WrongOwner)]
+    pub seller_source: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, close = requester, seeds = [b"request", &request.t0.to_le_bytes(), &request.strike_bps.to_le_bytes(), request.requester.as_ref()], bump = request.bump)]
+    pub request: Box<Account<'info, Request>>,
+    /// CHECK: the request binds the refund recipient.
+    #[account(mut, address = request.requester @ SpanError::ReceiverMismatch)]
+    pub requester: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"request_usdc", request.key().as_ref()], bump = request.usdc_bump,
+        constraint = request_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = request_usdc.owner == request.key() @ SpanError::WrongOwner)]
+    pub request_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, dup, constraint = requester_usdc.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = requester_usdc.owner == request.requester @ SpanError::WrongOwner)]
+    pub requester_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    #[account(address = config.span_mint.ok_or(SpanError::SpanNotSet)? @ SpanError::WrongMint)]
+    pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
+    #[account(address = config.span_token_program.ok_or(SpanError::SpanNotSet)? @ SpanError::UnsupportedTokenProgram)]
+    pub span_token_program: Option<Interface<'info, TokenInterface>>,
+    /// CHECK: address and initialization are checked in the handler.
+    #[account(mut)]
+    pub span_hold: Option<UncheckedAccount<'info>>,
+    #[account(mut, seeds = [b"request_span", request.key().as_ref()], bump = request.span_bump)]
+    pub request_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+}
+
+#[event_cpi]
+#[derive(Accounts)]
+#[instruction(id: u64)]
+pub struct FillRequestRunning<'info> {
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    #[account(mut, seeds = [b"config"], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [b"candle", &candle.t0.to_le_bytes()], bump = candle.bump,
+        constraint = candle.t0 == request.t0 @ SpanError::RequestMismatch)]
+    pub candle: Box<Account<'info, Candle>>,
+    #[account(init, payer = seller, space = request_ticket_space(&config, id)?, seeds = [b"ticket".as_ref(), id.to_le_bytes().as_ref()], bump)]
+    pub ticket: Box<Account<'info, Ticket>>,
+    #[account(init, payer = seller, seeds = [b"vault", ticket.key().as_ref()], bump,
+        token::mint = usdc_mint, token::authority = ticket)]
+    pub vault: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = seller_source.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = seller_source.owner == seller.key() @ SpanError::WrongOwner)]
+    pub seller_source: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, close = requester, seeds = [b"request", &request.t0.to_le_bytes(), &request.strike_bps.to_le_bytes(), request.requester.as_ref()], bump = request.bump)]
+    pub request: Box<Account<'info, Request>>,
+    /// CHECK: the request binds the refund recipient.
+    #[account(mut, address = request.requester @ SpanError::ReceiverMismatch)]
+    pub requester: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"request_usdc", request.key().as_ref()], bump = request.usdc_bump,
+        constraint = request_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = request_usdc.owner == request.key() @ SpanError::WrongOwner)]
+    pub request_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, dup, constraint = requester_usdc.mint == config.usdc_mint @ SpanError::WrongMint,
+        constraint = requester_usdc.owner == request.requester @ SpanError::WrongOwner)]
+    pub requester_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(address = config.usdc_mint @ SpanError::WrongMint)]
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+    /// CHECK: the handler validates the configured asset feed.
+    pub feed: UncheckedAccount<'info>,
+    #[account(address = config.span_mint.ok_or(SpanError::SpanNotSet)? @ SpanError::WrongMint)]
+    pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
+    #[account(address = config.span_token_program.ok_or(SpanError::SpanNotSet)? @ SpanError::UnsupportedTokenProgram)]
+    pub span_token_program: Option<Interface<'info, TokenInterface>>,
+    /// CHECK: address and initialization are checked in the handler.
+    #[account(mut)]
+    pub span_hold: Option<UncheckedAccount<'info>>,
+    #[account(mut, seeds = [b"request_span", request.key().as_ref()], bump = request.span_bump)]
+    pub request_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+}
+#[event_cpi]
+#[derive(Accounts)]
+pub struct CloseRequest<'info> {
+    pub closer: Signer<'info>,
+    #[account(mut, close = requester, seeds = [b"request", &request.t0.to_le_bytes(), &request.strike_bps.to_le_bytes(), request.requester.as_ref()], bump = request.bump)]
+    pub request: Box<Account<'info, Request>>,
+    /// CHECK: bound to the requester who receives every refund.
+    #[account(mut, address = request.requester @ SpanError::ReceiverMismatch)]
+    pub requester: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"request_usdc", request.key().as_ref()], bump = request.usdc_bump,
+        constraint = request_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = request_usdc.owner == request.key() @ SpanError::WrongOwner)]
+    pub request_usdc: Box<Account<'info, UsdcAccount>>,
+    #[account(mut, constraint = requester_usdc.mint == usdc_mint.key() @ SpanError::WrongMint,
+        constraint = requester_usdc.owner == request.requester @ SpanError::WrongOwner)]
+    pub requester_usdc: Box<Account<'info, UsdcAccount>>,
+    pub usdc_mint: Box<Account<'info, UsdcMint>>,
+    pub token_program: Program<'info, Token>,
+    #[account(mut, seeds = [b"request_span", request.key().as_ref()], bump = request.span_bump)]
+    pub request_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    #[account(mut)]
+    pub requester_span: Option<Box<InterfaceAccount<'info, SpanAccount>>>,
+    pub span_mint: Option<Box<InterfaceAccount<'info, SpanMint>>>,
+    pub span_token_program: Option<Interface<'info, TokenInterface>>,
+}
+
+pub fn request_ticket_space(config: &Config, id: u64) -> Result<usize> {
+    require_eq!(id, config.next_ticket_id, SpanError::IdMismatch);
+    Ok(8 + Ticket::INIT_SPACE)
+}

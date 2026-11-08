@@ -237,3 +237,29 @@ pub struct BidClosed {
     pub ticket: Pubkey, pub bid: Pubkey, pub bidder: Pubkey, pub closer: Pubkey,
     pub usdc: u64, pub span: u64,
 }
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
+pub enum RequestKind { Held, Open, Running }
+#[event]
+pub struct RequestPlaced {
+    pub request: Pubkey, pub requester: Pubkey, pub t0: i64, pub strike_bps: u16,
+    pub ask: u64, pub cap: u64, pub until: i64, pub min_room: u64,
+}
+#[event]
+pub struct RequestSpan {
+    pub request: Pubkey, pub amount: u64, pub step_bps: u16, pub marker: Pubkey,
+}
+#[event]
+pub struct RequestFilled {
+    pub request: Pubkey, pub kind: RequestKind, pub ticket: Pubkey, pub id: u64, pub t0: i64,
+    pub from: Pubkey, pub to: Pubkey, pub ask: u64, pub cap: u64, pub min_room: u64,
+    pub recorded: u64, pub paid: u64, pub refund: u64, pub extra: u64,
+    pub high: u64, pub low: u64, pub tail_high: u64, pub tail_low: u64,
+    pub reads: u16, pub marks: u32, pub burned: u64, pub span_returned: u64,
+    pub span_loaded: u64, pub step_bps: u16, pub marker: Pubkey, pub slot: u64,
+    pub price: u64, pub publish_ts: i64,
+}
+#[event]
+pub struct RequestClosed {
+    pub request: Pubkey, pub requester: Pubkey, pub closer: Pubkey, pub usdc: u64, pub span: u64,
+}

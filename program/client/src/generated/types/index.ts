@@ -8,5 +8,6 @@
 
 export * from "./outcome.js";
 export * from "./priceRead.js";
+export * from "./requestKind.js";
 export * from "./side.js";
 export * from "./ticketState.js";

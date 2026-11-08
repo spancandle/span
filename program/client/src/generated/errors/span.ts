@@ -110,6 +110,12 @@ export const SPAN_ERROR__READ_PENDING = 0x179d; // 6045
 export const SPAN_ERROR__NOT_BIDDER = 0x179e; // 6046
 /** ResaleOpen:  */
 export const SPAN_ERROR__RESALE_OPEN = 0x179f; // 6047
+/** RequestMismatch:  */
+export const SPAN_ERROR__REQUEST_MISMATCH = 0x17a0; // 6048
+/** RoomShort:  */
+export const SPAN_ERROR__ROOM_SHORT = 0x17a1; // 6049
+/** NotRequester:  */
+export const SPAN_ERROR__NOT_REQUESTER = 0x17a2; // 6050
 
 export type SpanError =
   | typeof SPAN_ERROR__ALREADY_LOADED
@@ -137,6 +143,7 @@ export type SpanError =
   | typeof SPAN_ERROR__NOT_LOADED
   | typeof SPAN_ERROR__NOT_MARKER
   | typeof SPAN_ERROR__NOT_OPEN
+  | typeof SPAN_ERROR__NOT_REQUESTER
   | typeof SPAN_ERROR__NOT_SELLER
   | typeof SPAN_ERROR__NOT_SOLD
   | typeof SPAN_ERROR__NOT_UPGRADE_AUTHORITY
@@ -149,7 +156,9 @@ export type SpanError =
   | typeof SPAN_ERROR__READ_FILLED
   | typeof SPAN_ERROR__READ_PENDING
   | typeof SPAN_ERROR__RECEIVER_MISMATCH
+  | typeof SPAN_ERROR__REQUEST_MISMATCH
   | typeof SPAN_ERROR__RESALE_OPEN
+  | typeof SPAN_ERROR__ROOM_SHORT
   | typeof SPAN_ERROR__SPAN_ALREADY_SET
   | typeof SPAN_ERROR__SPAN_NOT_SET
   | typeof SPAN_ERROR__SPAN_SHORT
@@ -189,6 +198,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [SPAN_ERROR__NOT_LOADED]: ``,
     [SPAN_ERROR__NOT_MARKER]: ``,
     [SPAN_ERROR__NOT_OPEN]: ``,
+    [SPAN_ERROR__NOT_REQUESTER]: ``,
     [SPAN_ERROR__NOT_SELLER]: ``,
     [SPAN_ERROR__NOT_SOLD]: ``,
     [SPAN_ERROR__NOT_UPGRADE_AUTHORITY]: ``,
@@ -201,7 +211,9 @@ if (process.env["NODE_ENV"] !== "production") {
     [SPAN_ERROR__READ_FILLED]: ``,
     [SPAN_ERROR__READ_PENDING]: ``,
     [SPAN_ERROR__RECEIVER_MISMATCH]: ``,
+    [SPAN_ERROR__REQUEST_MISMATCH]: ``,
     [SPAN_ERROR__RESALE_OPEN]: ``,
+    [SPAN_ERROR__ROOM_SHORT]: ``,
     [SPAN_ERROR__SPAN_ALREADY_SET]: ``,
     [SPAN_ERROR__SPAN_NOT_SET]: ``,
     [SPAN_ERROR__SPAN_SHORT]: ``,

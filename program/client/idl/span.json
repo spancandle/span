@@ -2,7 +2,7 @@
   "address": "ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd",
   "metadata": {
     "name": "span",
-    "version": "1.16.0",
+    "version": "1.18.0",
     "spec": "0.1.0"
   },
   "instructions": [
@@ -940,6 +940,154 @@
       "args": []
     },
     {
+      "name": "close_request",
+      "discriminator": [
+        170,
+        46,
+        165,
+        120,
+        223,
+        102,
+        115,
+        2
+      ],
+      "accounts": [
+        {
+          "name": "closer",
+          "signer": true
+        },
+        {
+          "name": "request",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request.t0",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.strike_bps",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.requester",
+                "account": "Request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester",
+          "writable": true
+        },
+        {
+          "name": "request_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "request_span",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  115,
+                  112,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester_span",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "span_mint",
+          "optional": true
+        },
+        {
+          "name": "span_token_program",
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "close_resale",
       "discriminator": [
         38,
@@ -1051,6 +1199,759 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "fill_request_held",
+      "discriminator": [
+        164,
+        99,
+        30,
+        232,
+        61,
+        84,
+        237,
+        58
+      ],
+      "accounts": [
+        {
+          "name": "holder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket.id",
+                "account": "Ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "request",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request.t0",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.strike_bps",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.requester",
+                "account": "Request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester",
+          "writable": true
+        },
+        {
+          "name": "request_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester_usdc",
+          "writable": true
+        },
+        {
+          "name": "holder_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "resale",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  97,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "span_mint",
+          "optional": true
+        },
+        {
+          "name": "span_token_program",
+          "optional": true
+        },
+        {
+          "name": "span_hold",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "holder_span",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "request_span",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  115,
+                  112,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "fill_request_open",
+      "discriminator": [
+        208,
+        146,
+        192,
+        16,
+        88,
+        151,
+        29,
+        12
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_source",
+          "writable": true
+        },
+        {
+          "name": "request",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request.t0",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.strike_bps",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.requester",
+                "account": "Request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester",
+          "writable": true
+        },
+        {
+          "name": "request_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "span_mint",
+          "optional": true
+        },
+        {
+          "name": "span_token_program",
+          "optional": true
+        },
+        {
+          "name": "span_hold",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "request_span",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  115,
+                  112,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "fill_request_running",
+      "discriminator": [
+        60,
+        40,
+        135,
+        21,
+        94,
+        204,
+        104,
+        189
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "candle",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  110,
+                  100,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "candle.t0",
+                "account": "Candle"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  105,
+                  99,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_source",
+          "writable": true
+        },
+        {
+          "name": "request",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request.t0",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.strike_bps",
+                "account": "Request"
+              },
+              {
+                "kind": "account",
+                "path": "request.requester",
+                "account": "Request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester",
+          "writable": true
+        },
+        {
+          "name": "request_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "feed"
+        },
+        {
+          "name": "span_mint",
+          "optional": true
+        },
+        {
+          "name": "span_token_program",
+          "optional": true
+        },
+        {
+          "name": "span_hold",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "request_span",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  115,
+                  112,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "id",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "init",
@@ -2104,6 +3005,152 @@
       ]
     },
     {
+      "name": "place_request",
+      "discriminator": [
+        98,
+        175,
+        140,
+        31,
+        98,
+        46,
+        123,
+        0
+      ],
+      "accounts": [
+        {
+          "name": "requester",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "request",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "t0"
+              },
+              {
+                "kind": "arg",
+                "path": "strike_bps"
+              },
+              {
+                "kind": "account",
+                "path": "requester"
+              }
+            ]
+          }
+        },
+        {
+          "name": "request_usdc",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "requester_source",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "t0",
+          "type": "i64"
+        },
+        {
+          "name": "strike_bps",
+          "type": "u16"
+        },
+        {
+          "name": "ask",
+          "type": "u64"
+        },
+        {
+          "name": "cap",
+          "type": "u64"
+        },
+        {
+          "name": "until",
+          "type": "i64"
+        },
+        {
+          "name": "min_room",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "read",
       "discriminator": [
         116,
@@ -2172,6 +3219,148 @@
         {
           "name": "j",
           "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "request_span",
+      "discriminator": [
+        70,
+        51,
+        227,
+        57,
+        149,
+        113,
+        212,
+        88
+      ],
+      "accounts": [
+        {
+          "name": "gate",
+          "accounts": [
+            {
+              "name": "requester",
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "config",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "request",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      114,
+                      101,
+                      113,
+                      117,
+                      101,
+                      115,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "request.t0",
+                    "account": "Request"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "request.strike_bps",
+                    "account": "Request"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "request.requester",
+                    "account": "Request"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "request_span",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  115,
+                  112,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "gate.request",
+                "account": "RequestSpanGate"
+              }
+            ]
+          }
+        },
+        {
+          "name": "span_mint"
+        },
+        {
+          "name": "span_source",
+          "writable": true
+        },
+        {
+          "name": "span_token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "step_bps",
+          "type": "u16"
+        },
+        {
+          "name": "marker",
+          "type": "pubkey"
         }
       ]
     },
@@ -2736,6 +3925,19 @@
       ]
     },
     {
+      "name": "Request",
+      "discriminator": [
+        125,
+        172,
+        150,
+        161,
+        162,
+        115,
+        39,
+        71
+      ]
+    },
+    {
       "name": "Resale",
       "discriminator": [
         46,
@@ -2943,6 +4145,58 @@
         252,
         160,
         120
+      ]
+    },
+    {
+      "name": "RequestClosed",
+      "discriminator": [
+        59,
+        172,
+        99,
+        75,
+        9,
+        19,
+        226,
+        188
+      ]
+    },
+    {
+      "name": "RequestFilled",
+      "discriminator": [
+        89,
+        111,
+        161,
+        194,
+        214,
+        229,
+        51,
+        5
+      ]
+    },
+    {
+      "name": "RequestPlaced",
+      "discriminator": [
+        202,
+        138,
+        240,
+        57,
+        207,
+        84,
+        109,
+        181
+      ]
+    },
+    {
+      "name": "RequestSpan",
+      "discriminator": [
+        163,
+        208,
+        132,
+        9,
+        102,
+        58,
+        152,
+        47
       ]
     },
     {
@@ -3268,6 +4522,18 @@
     {
       "code": 6047,
       "name": "ResaleOpen"
+    },
+    {
+      "code": 6048,
+      "name": "RequestMismatch"
+    },
+    {
+      "code": 6049,
+      "name": "RoomShort"
+    },
+    {
+      "code": 6050,
+      "name": "NotRequester"
     }
   ],
   "types": [
@@ -3969,6 +5235,299 @@
           {
             "name": "read_low",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Request",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "strike_bps",
+            "type": "u16"
+          },
+          {
+            "name": "requester",
+            "type": "pubkey"
+          },
+          {
+            "name": "ask",
+            "type": "u64"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          },
+          {
+            "name": "until",
+            "type": "i64"
+          },
+          {
+            "name": "min_room",
+            "type": "u64"
+          },
+          {
+            "name": "span_amount",
+            "type": "u64"
+          },
+          {
+            "name": "step_bps",
+            "type": "u16"
+          },
+          {
+            "name": "marker",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "usdc_bump",
+            "type": "u8"
+          },
+          {
+            "name": "span_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RequestClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "request",
+            "type": "pubkey"
+          },
+          {
+            "name": "requester",
+            "type": "pubkey"
+          },
+          {
+            "name": "closer",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc",
+            "type": "u64"
+          },
+          {
+            "name": "span",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RequestFilled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "request",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "RequestKind"
+              }
+            }
+          },
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "from",
+            "type": "pubkey"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "ask",
+            "type": "u64"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          },
+          {
+            "name": "min_room",
+            "type": "u64"
+          },
+          {
+            "name": "recorded",
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          },
+          {
+            "name": "refund",
+            "type": "u64"
+          },
+          {
+            "name": "extra",
+            "type": "u64"
+          },
+          {
+            "name": "high",
+            "type": "u64"
+          },
+          {
+            "name": "low",
+            "type": "u64"
+          },
+          {
+            "name": "tail_high",
+            "type": "u64"
+          },
+          {
+            "name": "tail_low",
+            "type": "u64"
+          },
+          {
+            "name": "reads",
+            "type": "u16"
+          },
+          {
+            "name": "marks",
+            "type": "u32"
+          },
+          {
+            "name": "burned",
+            "type": "u64"
+          },
+          {
+            "name": "span_returned",
+            "type": "u64"
+          },
+          {
+            "name": "span_loaded",
+            "type": "u64"
+          },
+          {
+            "name": "step_bps",
+            "type": "u16"
+          },
+          {
+            "name": "marker",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "publish_ts",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RequestKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Held"
+          },
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Running"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RequestPlaced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "request",
+            "type": "pubkey"
+          },
+          {
+            "name": "requester",
+            "type": "pubkey"
+          },
+          {
+            "name": "t0",
+            "type": "i64"
+          },
+          {
+            "name": "strike_bps",
+            "type": "u16"
+          },
+          {
+            "name": "ask",
+            "type": "u64"
+          },
+          {
+            "name": "cap",
+            "type": "u64"
+          },
+          {
+            "name": "until",
+            "type": "i64"
+          },
+          {
+            "name": "min_room",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RequestSpan",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "request",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "step_bps",
+            "type": "u16"
+          },
+          {
+            "name": "marker",
+            "type": "pubkey"
           }
         ]
       }

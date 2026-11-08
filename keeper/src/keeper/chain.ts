@@ -59,6 +59,7 @@ export class Chain {
   untils = new Map<Address, Live<s.Until>>();
   resales = new Map<Address, Live<s.Resale>>();
   bids = new Map<Address, Live<s.Bid>>();
+  requests = new Map<Address, Live<s.Request>>();
   feeds = new Map<Asset, FeedValue>();
   get feed() { return this.feeds.get(0); }
   set feed(value: FeedValue | undefined) { if(value)this.feeds.set(0,value);else this.feeds.delete(0); }
@@ -111,8 +112,8 @@ export class Chain {
       this.onSlot();
     }
   }
-  ingest(kind: "candle" | "ticket" | "until" | "resale" | "bid", key: Address, raw: any, slot: number) {
-    const map = (kind === "candle" ? this.candles : kind === "ticket" ? this.tickets : kind === "until" ? this.untils : kind === "resale" ? this.resales : this.bids) as Map<
+  ingest(kind: "candle" | "ticket" | "until" | "resale" | "bid" | "request", key: Address, raw: any, slot: number) {
+    const map = (kind === "candle" ? this.candles : kind === "ticket" ? this.tickets : kind === "until" ? this.untils : kind === "resale" ? this.resales : kind === "bid" ? this.bids : this.requests) as Map<
         Address,
         Live<any>
       >,
@@ -124,11 +125,11 @@ export class Chain {
     }
     const d = bytes(raw),
       disc =
-        kind === "candle" ? s.CANDLE_DISCRIMINATOR : kind === "ticket" ? s.TICKET_DISCRIMINATOR : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : s.BID_DISCRIMINATOR;
+        kind === "candle" ? s.CANDLE_DISCRIMINATOR : kind === "ticket" ? s.TICKET_DISCRIMINATOR : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : kind === "bid" ? s.BID_DISCRIMINATOR : s.REQUEST_DISCRIMINATOR;
     if (
       raw.owner !== s.SPAN_PROGRAM_ADDRESS ||
       !disc.every((x, i) => d[i] === x) ||
-      d.length !== (kind === "candle" ? 247 : kind === "ticket" ? 173 : kind === "until" ? 81 : kind === "resale" ? 89 : 141)
+      d.length !== (kind === "candle" ? 247 : kind === "ticket" ? 173 : kind === "until" ? 81 : kind === "resale" ? 89 : kind === "bid" ? 141 : 127)
     )
       return;
     if (old && old.data === raw.data[0]) {
@@ -138,7 +139,7 @@ export class Chain {
     const value =
       kind === "candle"
         ? s.getCandleDecoder().decode(d)
-        : kind === "ticket" ? s.getTicketDecoder().decode(d) : kind === "until" ? s.getUntilDecoder().decode(d) : kind === "resale" ? s.getResaleDecoder().decode(d) : s.getBidDecoder().decode(d);
+        : kind === "ticket" ? s.getTicketDecoder().decode(d) : kind === "until" ? s.getUntilDecoder().decode(d) : kind === "resale" ? s.getResaleDecoder().decode(d) : kind === "bid" ? s.getBidDecoder().decode(d) : s.getRequestDecoder().decode(d);
     map.set(key, { value, slot, data: raw.data[0] });
     this.onChange();
   }
@@ -189,7 +190,7 @@ export class Chain {
   }
   async pollPrograms() {
     await Promise.all(
-      (["candle", "ticket", "until", "resale", "bid"] as const).map(async (kind) => {
+      (["candle", "ticket", "until", "resale", "bid", "request"] as const).map(async (kind) => {
         const v = await this.rpc.call("getProgramAccounts", [
           s.SPAN_PROGRAM_ADDRESS,
           {
@@ -199,14 +200,14 @@ export class Chain {
             filters: filter(
               kind === "candle"
                 ? s.CANDLE_DISCRIMINATOR
-                : kind === "ticket" ? s.TICKET_DISCRIMINATOR : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : s.BID_DISCRIMINATOR,
+                : kind === "ticket" ? s.TICKET_DISCRIMINATOR : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : kind === "bid" ? s.BID_DISCRIMINATOR : s.REQUEST_DISCRIMINATOR,
             ),
           },
         ]);
         const seen = new Set(v.value.map((x: any) => x.pubkey));
         for (const x of v.value)
           this.ingest(kind, address(x.pubkey), x.account, v.context.slot);
-        const map = kind === "candle" ? this.candles : kind === "ticket" ? this.tickets : kind === "until" ? this.untils : kind === "resale" ? this.resales : this.bids;
+        const map = kind === "candle" ? this.candles : kind === "ticket" ? this.tickets : kind === "until" ? this.untils : kind === "resale" ? this.resales : kind === "bid" ? this.bids : this.requests;
         for (const [key, item] of map)
           if (!seen.has(key) && item.slot <= v.context.slot) {
             map.delete(key);
@@ -333,7 +334,7 @@ export class Chain {
       .finally(() => this.busy.delete(name));
   }
   start(role: "keeper" | "tape") {
-    for (const kind of ["candle", "ticket", "until", "resale", "bid"] as const)
+    for (const kind of ["candle", "ticket", "until", "resale", "bid", "request"] as const)
       this.stops.push(
         this.ws.subscribe(
           "programSubscribe",
@@ -345,7 +346,7 @@ export class Chain {
               filters: filter(
                 kind === "candle"
                   ? s.CANDLE_DISCRIMINATOR
-                  : kind === "ticket" ? s.TICKET_DISCRIMINATOR : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : s.BID_DISCRIMINATOR,
+                  : kind === "ticket" ? s.TICKET_DISCRIMINATOR : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : kind === "bid" ? s.BID_DISCRIMINATOR : s.REQUEST_DISCRIMINATOR,
               ),
             },
           ],

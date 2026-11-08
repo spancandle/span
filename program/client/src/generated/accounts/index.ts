@@ -9,6 +9,7 @@
 export * from "./bid.js";
 export * from "./candle.js";
 export * from "./config.js";
+export * from "./request.js";
 export * from "./resale.js";
 export * from "./ticket.js";
 export * from "./until.js";

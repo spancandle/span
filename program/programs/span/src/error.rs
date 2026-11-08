@@ -50,4 +50,7 @@ pub enum SpanError {
     ReadPending,
     NotBidder,
     ResaleOpen,
+    RequestMismatch,
+    RoomShort,
+    NotRequester,
 }

@@ -31,6 +31,37 @@ export async function createPrepare(
   return async (a: Action, fee: bigint) => {
     const hash = latest();
     if (!hash) throw Error("Preparation unavailable");
+    if (a.kind === "closeRequest") {
+      const request=address(a.request!),value=chain.requests.get(request)?.value,config=chain.config;
+      if (!value || !config) throw Error("Request preparation unavailable");
+      const clock=await rpc.call("getAccountInfo",[CLOCK,{encoding:"base64",commitment:"confirmed"}]);
+      const data=bytes(clock?.value);
+      if (data.length < 40 || data.readBigInt64LE(32) <= value.until) throw Error("Request still live");
+      const destination=async(mint:Address,program:Address)=>{
+        const ata=(await findAssociatedTokenPda({owner:value.requester,mint,tokenProgram:program}))[0];
+        const row=(await rpc.call("getAccountInfo",[ata,{encoding:"base64",commitment:"confirmed"}]))?.value;
+        try {
+          const data=bytes(row);
+          if (row?.owner !== program || data.length < 165) throw new BidderAccountUnavailable("Requester token account unavailable");
+          const token=getTokenDecoder().decode(data.subarray(0,165));
+          if (token.owner !== value.requester || token.mint !== mint || token.state !== AccountState.Initialized) throw new BidderAccountUnavailable("Invalid requester token account");
+        } catch (error) {
+          if (error instanceof BidderAccountUnavailable) throw error;
+          throw new BidderAccountUnavailable("Invalid requester token account");
+        }
+        return ata;
+      };
+      const requesterUsdc=await destination(config.usdcMint,TOKEN),loaded=value.spanAmount>0n,
+        spanMint=loaded?unwrapOption(config.spanMint):undefined,spanTokenProgram=loaded?unwrapOption(config.spanTokenProgram):undefined;
+      if (loaded && (!spanMint || !spanTokenProgram)) throw Error("SPAN unavailable");
+      const ix=s.getCloseRequestInstruction({request,requester:value.requester,closer:payer,
+        requestUsdc:(await s.findRequestUsdcPda(request))[0],requesterUsdc,usdcMint:config.usdcMint,tokenProgram:TOKEN,
+        requestSpan:loaded?(await s.findRequestSpanPda(request))[0]:undefined,
+        requesterSpan:loaded?await destination(spanMint!,spanTokenProgram!):undefined,
+        spanMint:spanMint??undefined,spanTokenProgram:spanTokenProgram??undefined,eventAuthority,program:s.SPAN_PROGRAM_ADDRESS});
+      priorities.register(a.key,[ix],payer.address);
+      return prepareTransaction([ix],payer,hash,a,fee);
+    }
     if (a.kind === "closeBid") {
       const bid=address(a.bid!),value=chain.bids.get(bid)?.value,config=chain.config;
       if (!value || !config) throw Error("Bid preparation unavailable");

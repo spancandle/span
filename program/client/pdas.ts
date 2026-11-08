@@ -1,6 +1,8 @@
 import {
   getProgramDerivedAddress,
   getAddressEncoder,
+  getI64Encoder,
+  getU16Encoder,
   type Address,
 } from "@solana/kit";
 import {
@@ -41,3 +43,7 @@ export const findBidPda = (ticket: Address, bidder: Address) => getProgramDerive
 });
 export const findBidUsdcPda = (bid: Address) => getProgramDerivedAddress({programAddress:SPAN_PROGRAM_ADDRESS,seeds:["bid_usdc",getAddressEncoder().encode(bid)]});
 export const findBidSpanPda = (bid: Address) => getProgramDerivedAddress({programAddress:SPAN_PROGRAM_ADDRESS,seeds:["bid_span",getAddressEncoder().encode(bid)]});
+
+export const findRequestPda = (t0:bigint, strikeBps:number, requester:Address) => getProgramDerivedAddress({programAddress:SPAN_PROGRAM_ADDRESS,seeds:["request",getI64Encoder().encode(t0),getU16Encoder().encode(strikeBps),getAddressEncoder().encode(requester)]});
+export const findRequestUsdcPda = (request:Address) => getProgramDerivedAddress({programAddress:SPAN_PROGRAM_ADDRESS,seeds:["request_usdc",getAddressEncoder().encode(request)]});
+export const findRequestSpanPda = (request:Address) => getProgramDerivedAddress({programAddress:SPAN_PROGRAM_ADDRESS,seeds:["request_span",getAddressEncoder().encode(request)]});
