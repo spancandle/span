@@ -63,6 +63,7 @@ export function httpServer(
         "/hours.json",
         "/chain.json",
         "/status.json",
+        "/readers.json",
       ].includes(path)
     ) {
       res.writeHead(404);

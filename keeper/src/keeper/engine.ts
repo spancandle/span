@@ -8,7 +8,8 @@ import {
   type Ticket,
 } from "../../../program/client/index.js";
 import { assetOf,secsOf,lastReadOf } from "../../../program/client/assets.js";
-import { spanHeld, type Chain } from "./chain.js";
+import { spanHeld, pairedSpanBalance, type Chain } from "./chain.js";
+import { readerMarkAccepts, readerOptions, type ReaderOptions } from "./reader-policy.js";
 import type { FeedValue } from "../common/feed.js";
 import type { Action, Prepared } from "./sender.js";
 import type { CreationBudget } from "./budget.js";
@@ -39,6 +40,7 @@ export class Engine {
   private opening = new Set<string>();
   private releaseHours: ReadonlySet<bigint>;
   private decisions = new Map<string, string>();
+  readonly options: ReaderOptions;
   constructor(
     readonly chain: Pick<
       Chain,
@@ -49,9 +51,14 @@ export class Engine {
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
     readonly logger: Logger = log,
     releaseHours: readonly bigint[] = [],
-  ) { this.releaseHours = new Set(releaseHours); }
+    options: ReaderOptions = readerOptions(),
+  ) {
+    this.options = readerOptions(options.mode, options.policy);
+    this.releaseHours = new Set(this.options.mode === "full" ? releaseHours : []);
+  }
   /** Replaces the hours to open and read without a ticket; an open still waiting for an hour that left is dropped. */
   listHours(t0s: readonly bigint[]) {
+    if (this.options.mode === "marks") return;
     const next = new Set(t0s);
     for (const t0 of this.releaseHours)
       if (!next.has(t0)) this.complete(`open:${t0}`);
@@ -131,7 +138,7 @@ export class Engine {
           });
           continue;
         }
-        if (now >= b - 10n)
+        if (this.options.mode === "full" && now >= b - 10n)
           out.push({
             key: k,
             kind: "read",
@@ -160,7 +167,7 @@ export class Engine {
           tailLow: t.tailLow,
         });
       }
-      if (now >= settleAfter(c) - 30n) {
+      if (this.options.mode === "full" && now >= settleAfter(c) - 30n) {
         out.push({
           key: `settle:${key}`,
           kind: "settle",
@@ -187,16 +194,16 @@ export class Engine {
         });
     }
     for (const [until, {value}] of this.chain.untils ?? [])
-      if (!this.chain.tickets.has(value.ticket))
+      if (this.options.mode === "full" && !this.chain.tickets.has(value.ticket))
         out.push({key:`closeUntil:${until}`,kind:"closeUntil",until,t0:0n});
     for (const [resale,{value}] of this.chain.resales ?? [])
-      if (!this.chain.tickets.has(value.ticket))
+      if (this.options.mode === "full" && !this.chain.tickets.has(value.ticket))
         out.push({key:`closeResale:${resale}`,kind:"closeResale",resale,t0:0n});
     for (const [bid,{value}] of this.chain.bids ?? [])
-      if (!this.chain.tickets.has(value.ticket) || now > value.until + 2n)
+      if (this.options.mode === "full" && (!this.chain.tickets.has(value.ticket) || now > value.until + 2n))
         out.push({key:`closeBid:${bid}`,kind:"closeBid",bid,t0:0n});
     for (const [request,{value}] of this.chain.requests ?? [])
-      if (now > value.until + 2n)
+      if (this.options.mode === "full" && now > value.until + 2n)
         out.push({key:`closeRequest:${request}`,kind:"closeRequest",request,t0:0n});
     for (const [key,p] of [...this.pending,...this.prepared])
       if (p.action.kind === "closeRequest") {
@@ -235,9 +242,20 @@ export class Engine {
   private funded(key: string, t: Ticket) {
     const held = this.chain.spanHolds?.get(key as Address),
       balance = spanHeld(t, held),
-      available = held && held.amount < balance ? held.amount : balance,
+      available = this.options.policy === "paced-v1"
+        ? pairedSpanBalance(this.chain.tickets.get(key as Address)!, held)
+        : held && held.amount < balance ? held.amount : balance,
       burn = this.chain.config!.burnPerMark,
       short = this.shortMarks.get(key);
+    if (available === undefined) {
+      if (this.decisions.get(`balance:${key}`) !== "waiting") {
+        this.decisions.set(`balance:${key}`, "waiting");
+        this.logger({ event: "mark-balance-wait", ticket: key });
+      }
+      return false;
+    }
+    if (this.decisions.delete(`balance:${key}`))
+      this.logger({ event: "mark-balance-ready", ticket: key });
     if (short !== undefined) {
       if (!held || held.read <= short || available < burn) return false;
       this.shortMarks.delete(key);
@@ -306,7 +324,11 @@ export class Engine {
     )
       return false;
     const id = `${v.publishTs}:${v.price}`;
-    return this.marked.get(a.key) !== id && markAccepts(c, t, v.price).accepted;
+    if (this.marked.get(a.key) === id) return false;
+    if (this.options.policy === "greedy") return markAccepts(c, t, v.price).accepted;
+    const balance = pairedSpanBalance(this.chain.tickets.get(a.ticket as Address)!, this.chain.spanHolds?.get(a.ticket as Address));
+    return balance !== undefined && readerMarkAccepts(this.options.policy, c, t, v.price,
+      this.chain.now(), balance, this.chain.config!.burnPerMark).accepted;
   }
   update() {
     if (this.closed) return;
@@ -328,7 +350,8 @@ export class Engine {
           ? "read-pending"
           : this.pending.has(a.key)
             ? "mark-pending"
-            : "ready";
+            : this.options.policy === "paced-v1" && !this.eligible(a)
+              ? "paced-reserve" : "ready";
         const id = `${v.publishTs}:${v.price}:${reason}`;
         if (this.decisions.get(a.key) !== id) {
           this.decisions.set(a.key, id);
@@ -387,6 +410,8 @@ export class Engine {
     }
   }
   warm(a: Action) {
+    if (this.options.mode === "marks" && a.kind !== "mark")
+      throw Error("Marks-only keeper cannot prepare this action");
     if (this.preparing.has(a.key) || !this.port.blockhash()) return;
     this.preparing.add(a.key);
     const max = this.maximum.get(`${a.key}:${this.port.blockhash()}`) ?? -1n;

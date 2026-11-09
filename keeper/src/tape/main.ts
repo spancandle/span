@@ -17,7 +17,9 @@ import { readKeeperTelemetry } from "../common/telemetry.js";
 import { ROOT } from "../common/env.js";
 import { RELEASE_HOURS } from "../common/release-hours.js";
 import { EventHoursFile, eventHoursPath } from "../common/event-hours.js";
+import { loadReaders, readersDocument } from "../common/readers.js";
 export async function runTape() {
+  const readers = loadReaders(process.env.SPAN_READERS_FILE ? resolve(ROOT, process.env.SPAN_READERS_FILE) : undefined);
   const rpc = new RpcPool(cluster());
   await rpc.initialize();
   const ws = new Subscriptions(rpc, 2000),
@@ -67,6 +69,7 @@ export async function runTape() {
     ),
     chainReader = new ChainReader(rpc, pub, history),
     server = httpServer(pub);
+  atomicFile(pub, "readers.json", readersDocument(rpc.cluster, readers));
   await new Promise<void>((yes, no) => {
     server.once("error", () => no(Error("Tape HTTP listener unavailable")));
     server.listen(

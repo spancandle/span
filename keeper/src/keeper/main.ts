@@ -17,6 +17,9 @@ import { Overlay } from "./overlay.js";
 import { RELEASE_HOURS } from "../common/release-hours.js";
 import { EventHoursFile, eventHoursPath } from "../common/event-hours.js";
 import { keeperTelemetry } from "../common/telemetry.js";
+import { readerOptions, type ReaderOptions } from "./reader-policy.js";
+import { keeperLock } from "./lock.js";
+import { loadReaders, checkReaderSigner } from "../common/readers.js";
 /** The same preparation path is used by the running keeper and read-only simulations. */
 export async function createPrepare(
   rpc: RpcPool,
@@ -24,11 +27,14 @@ export async function createPrepare(
   chain: Chain,
   priorities: Pick<PriorityFees, "register">,
   latest: () => { blockhash: any; lastValidBlockHeight: bigint } | undefined,
+  options: ReaderOptions = readerOptions(),
 ) {
+  const mode = readerOptions(options.mode, options.policy).mode;
   const eventAuthority = (await s.findEventAuthorityPda())[0],
     config = chain.configKey;
   let candleRent: Promise<bigint> | undefined;
   return async (a: Action, fee: bigint) => {
+    if (mode === "marks" && a.kind !== "mark") throw Error("Marks-only keeper cannot prepare this action");
     const hash = latest();
     if (!hash) throw Error("Preparation unavailable");
     if (a.kind === "closeRequest") {
@@ -173,6 +179,8 @@ export const halfHoursEnabled=()=>process.env.KEEPER_HALF_HOURS==='1';
 export const releaseStarts=(hours:readonly bigint[],assets:readonly Asset[],half=halfHoursEnabled())=>hours.flatMap(t0=>assets.flatMap(a=>half?[t0+BigInt(a),t0+3n+BigInt(a)]:[t0+BigInt(a)]));
 export const listedStarts=(hours:readonly bigint[],assets:readonly Asset[],half=halfHoursEnabled())=>[...hours,...(half?hours.flatMap(t0=>assets.map(a=>t0+3n+BigInt(a))):[])];
 export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {}) {
+  const reader = readerOptions(process.env.KEEPER_ACTION_MODE, process.env.KEEPER_MARK_POLICY),
+    readers = loadReaders(process.env.SPAN_READERS_FILE ? resolve(ROOT, process.env.SPAN_READERS_FILE) : undefined);
   let assets: Asset[];
   try { assets=keeperAssets(); }catch(error){log({event:'invalid-assets'});throw error;}
   log({event:'assets',assets:assets.map(a=>ASSETS[a])});
@@ -182,10 +190,22 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
   const payer = await signerFile(
     resolve(ROOT, process.env.KEEPER_KEYPAIR || `keys/${c}-keeper.json`),
   );
+  checkReaderSigner(readers, payer.address, reader);
+  const cleanup: (() => void)[] = [keeperLock(ROOT, c, payer.address)];
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    for (const stop of cleanup.reverse()) { try { stop(); } catch { log({event:"keeper-close-error"}); } }
+  };
+  try {
   const rpc = new RpcPool(c);
+  cleanup.push(() => rpc.close());
   await rpc.initialize();
   const ws = new Subscriptions(rpc),
     chain = new Chain(rpc, ws, log, payer.address);
+  let stopChain = () => chain.close();
+  cleanup.push(() => stopChain());
   await chain.init();
   const record = new HeightRecord(
     resolve(
@@ -210,8 +230,9 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
     () => chain.height,
     () => chain.now(),
   );
-  const prepare = await createPrepare(rpc, payer, chain, priorities, () => latest);
-  const releases = releaseStarts(options.releaseHours ?? (process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : []),assets);
+  cleanup.push(() => sender.close());
+  const prepare = await createPrepare(rpc, payer, chain, priorities, () => latest, reader);
+  const releases = reader.mode === "marks" ? [] : releaseStarts(options.releaseHours ?? (process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : []),assets);
   const engine = new Engine(
     chain,
     payer.address,
@@ -225,10 +246,13 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
     budget,
     log,
     releases,
+    reader,
   );
+  cleanup.push(() => engine.close());
   /* listed hours join the release hours on the same path, read again whenever the file changes */
-  const listPath = eventHoursPath();
+  const listPath = reader.mode === "marks" ? undefined : eventHoursPath();
   let stopHours = () => {};
+  cleanup.push(() => stopHours());
   if (listPath) {
     const listed = new EventHoursFile(listPath),
       apply = () => {
@@ -265,6 +289,7 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
     engine.update();
   };
   const overlay = new Overlay(chain, sender);
+  stopChain = () => overlay.close();
   let busy = false;
   const refresh = async () => {
     if (busy) return;
@@ -339,6 +364,7 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
       60000,
     ),
   ];
+  cleanup.push(() => timers.forEach(clearInterval));
   const closeTelemetry = keeperTelemetry(
     resolve(ROOT, process.env.KEEPER_DATA_DIR || "keeper/data"),
     c,
@@ -352,25 +378,14 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
       generated: Date.now(),
     }),
   );
-  log({ event: "keeper-ready", cluster: c, address: payer.address });
-  const close = () => {
-    closeTelemetry();
-    stopHours();
-    timers.forEach(clearInterval);
-    engine.close();
-    sender.close();
-    overlay.close();
-    rpc.close();
-  };
-  process.once("SIGINT", () => {
-    close();
-    process.exit(0);
-  });
-  process.once("SIGTERM", () => {
-    close();
-    process.exit(0);
-  });
+  cleanup.push(closeTelemetry);
+  log({ event: "keeper-ready", cluster: c, address: payer.address, ...reader });
+  const stop = () => { close(); process.exit(0); };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  cleanup.push(() => { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); });
   return { close, engine, chain, rpc, budget };
+  } catch (error) { close(); throw error; }
 }
 if (process.argv[1]?.endsWith("/keeper/main.ts"))
   void runKeeper().catch((e) => {

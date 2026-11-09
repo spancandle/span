@@ -20,6 +20,7 @@ import {Publisher} from '../src/tape/publish.js';
 import {liveDocuments,legacyStart} from '../src/tape/state.js';
 import {httpServer} from '../src/tape/http.js';
 import {health} from '../scripts/health.js';
+import {readersDocument} from '../src/common/readers.js';
 import {capture} from './resale-support.js';
 
 const feeds=[SOL_FEED,BTC_FEED,ETH_FEED],prices=[10000000000n,8000000000000n,250000000000n];
@@ -122,7 +123,7 @@ it('serves only the allowed versioned paths and rejects half-hour paths under th
 });
 
 it('checks the versioned state and both versioned edge denials in health',async()=>{
- const seen:any[]=[],now=1800000000000,deps:any={now:()=>now,sleep:async()=>{},service:async()=>true,read:async()=>({generated:now,hashAt:now,listedAt:now,feed:{recording:false},state:{lastFullMs:now,lastSlot:'1'},http:{total:{}}}),listeners:async()=>[{address:'127.0.0.1:8789'}],publicIps:async()=>['198.51.100.1'],dns:async()=>['203.0.113.1'],balance:async()=>100000000,secrets:[],fetch:async(url:string,init:any)=>{seen.push({url,init});return url.includes('?')||init?.method==='POST'||init?.headers&&!init.headers.Origin?.includes('span.press')||url.includes('nope')||url.includes('status')?new Response('denied',{status:403,headers:{'cf-ray':'test'}}):url.includes('abc.json')?new Response('missing',{status:404}):new Response(JSON.stringify({generated:now}),{headers:{'cf-cache-status':'HIT',age:'0'}});}};
+ const seen:any[]=[],now=1800000000000,deps:any={now:()=>now,sleep:async()=>{},service:async()=>true,read:async(name:string)=>name==='readers.json'?readersDocument('mainnet'):({generated:now,hashAt:now,listedAt:now,feed:{recording:false},state:{lastFullMs:now,lastSlot:'1'},http:{total:{}}}),listeners:async()=>[{address:'127.0.0.1:8789'}],publicIps:async()=>['198.51.100.1'],dns:async()=>['203.0.113.1'],balance:async()=>100000000,secrets:[],fetch:async(url:string,init:any)=>{seen.push({url,init});return url.includes('?')||init?.method==='POST'||init?.headers&&!init.headers.Origin?.includes('span.press')||url.includes('nope')||url.includes('status')?new Response('denied',{status:403,headers:{'cf-ray':'test'}}):url.includes('abc.json')?new Response('missing',{status:404}):new Response(JSON.stringify(url.endsWith('/readers.json')?readersDocument('mainnet'):{generated:now}),{headers:{'cf-cache-status':'HIT',age:'0'}});}};
  const result=await health(deps,{scope:'data',data:'https://data.span.press',site:'https://span.press'});expect(result.ok,JSON.stringify(result.lines)).toBe(true);expect(seen.some(x=>x.url.endsWith('/v2/state.json')&&!x.init)).toBe(true);expect(seen.some(x=>x.url.includes('/v2/state.json?'))).toBe(true);expect(seen.some(x=>x.url.endsWith('/v2/state.json')&&x.init?.headers?.Origin?.endsWith('.invalid'))).toBe(true);
 });
 

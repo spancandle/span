@@ -19,7 +19,15 @@ import { parseFeed, type FeedValue } from "../common/feed.js";
 import { log, type Logger } from "../common/log.js";
 export const CLOCK = "SysvarC1ock11111111111111111111111111111111";
 export const bytes = (raw: any) => Buffer.from(raw?.data?.[0] ?? "", "base64");
-export type SpanHoldRead = { amount: bigint; burned: bigint; slot: number; read: number };
+export type SpanHoldRead = { amount: bigint; burned: bigint; slot: number; read: number;
+  buyer?: Address | null; marker?: Address; spanLoaded?: bigint; stepBps?: number };
+/** Only a coherent ticket/holding pair can establish the paced reader's current balance. */
+export function pairedSpanBalance(ticket: Live<s.Ticket>, held?: SpanHoldRead) {
+  const t = ticket.value;
+  return held && held.slot >= ticket.slot && held.buyer === (unwrapOption(t.buyer) ?? null) &&
+    held.marker === t.marker && held.spanLoaded === t.spanLoaded && held.stepBps === t.stepBps &&
+    held.burned === t.burned ? held.amount : undefined;
+}
 // Each ticket burn increases burned by the amount removed from the holding.
 export function spanHeld(t: Pick<s.Ticket, "spanLoaded" | "burned">, held?: SpanHoldRead) {
   if (t.spanLoaded === 0n) return 0n;
@@ -253,13 +261,13 @@ export class Chain {
         for (let i = 0; i < batch.length; i++) {
           const key = batch[i], ticket = v.value[i * 2], raw = v.value[i * 2 + 1], old = this.spanHolds.get(key);
           if (!eligible(key) || (old && (v.context.slot < old.slot || read <= old.read))) continue;
-          let burned: bigint;
+          let paired: s.Ticket;
           try {
             const data = bytes(ticket);
             if (ticket?.owner !== s.SPAN_PROGRAM_ADDRESS || data.length !== 173 ||
                 !s.TICKET_DISCRIMINATOR.every((x, j) => data[j] === x))
               throw Error("Invalid SPAN ticket");
-            burned = s.getTicketDecoder().decode(data).burned;
+            paired = s.getTicketDecoder().decode(data);
           } catch {
             this.logger({ event: "invalid-span-ticket", ticket: key });
             continue;
@@ -283,7 +291,9 @@ export class Chain {
               continue;
             }
           }
-          this.spanHolds.set(key, { amount, burned, slot: v.context.slot, read });
+          this.spanHolds.set(key, { amount, burned: paired.burned, slot: v.context.slot, read,
+            buyer: unwrapOption(paired.buyer) ?? null, marker: paired.marker,
+            spanLoaded: paired.spanLoaded, stepBps: paired.stepBps });
         }
         this.onChange();
       } catch {

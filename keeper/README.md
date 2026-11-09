@@ -23,3 +23,30 @@ This command simulates, creates any necessary receiving accounts, and sends an a
 Tape storage uses built-in SQLite under `TAPE_DATA_DIR` (default `keeper/data`) and atomically publishes `public/state.json`, `tickets.json`, `feed.json`, `history.json`, `chain.json`, `status.json`. `TAPE_HOST` and `TAPE_PORT` default to 127.0.0.1 and 8789. Stop with SIGTERM. Restart backfills confirmed program transactions and retains receipts after ticket closure. Feed gaps represent recorder outages or unreadable transaction history, not a pause in oracle publications. Budget wait counts reach status.json through a local Unix socket; the socket is ephemeral and persists no decision state. The generated timestamp freezes when state is stale; chain snapshots stop updating when the blockhash is older than 15 seconds. Consumers must check freshness.
 
 Run optional historical replay with `SPAN_REPLAY_DIR=<input-directory> NO_DNA=1 npm test`. `npm run devnet:e2e` runs real-time integration scenarios and uses devnet SOL and test tokens. `npm run observe:mainnet` is a read-only one-hour oracle recording check. Generated data and keys are ignored by git.
+
+## Reader policies
+
+The default `KEEPER_ACTION_MODE=full` / `KEEPER_MARK_POLICY=greedy` keeps opening, scheduled readings, marking its own tickets, settlement and cleanup. The only additional combination is `KEEPER_ACTION_MODE=marks` / `KEEPER_MARK_POLICY=paced-v1`. It prepares, signs and sends marks only for tickets whose current marker is its signer. It does not open candles, read, settle or clean up accounts. It yields to pending scheduled readings observed on chain. Different signers operate independently; a paced outage does not switch its tickets to greedy. The ticket's current marker remains authoritative through marker and holder changes.
+
+`paced-v1` uses integer base units. For initial load `L`, burn `b`, candle duration `D`, elapsed `e=now-t0`, and coherent current holding `R`, it computes `N=floor(L/b)`, `A=ceil(N*min(D,max(0,e)+300)/D)` and `reserve=N-A`. A valid predicted paid mark requires `floor(R/b)>reserve`; a valid predicted free mark still requires `R>=b`. Direct token transfers leave `L` unchanged and become immediately usable above the initial-load reserve, including whole units formed by remainders. A first load or marker change during a candle uses its original start and duration. A new holder uses the new initial load and holding, without counting a previous holder's cumulative burned amount as their spending. No local budget epoch or progress file is used.
+
+Paced waits for a jointly read ticket/holding pair whose context slot is at least the current ticket slot and whose decoded buyer, marker, initial load, step and burned amount match the current ticket. Missing or mismatched observations log `mark-balance-wait`; recovery logs `mark-balance-ready`. RPC failure logs remain separate. Existing polling retries without an extra unbounded request loop. Predictions do not constrain the program's burn rate: the price can change before landing, and a predicted free mark can burn. Sender retries already signed packets as before. This policy is an optional budget schedule, without a claim of higher average payout.
+
+`SPAN_READERS_FILE` points to a public JSON configuration, read once at startup. It has exactly `v:1` and two `readers`: `{id:"greedy",marker,mode:"full",policy:"greedy"}` and `{id:"paced-v1",marker,mode:"marks",policy:"paced-v1"}`. Markers must be distinct valid addresses. Do not put key material or key paths in this file. A paced process requires it and must match its paced address; a configured default process must match its greedy address. An unconfigured default process remains supported.
+
+Tape atomically serves `/readers.json` as `{v:1,cluster,program,readers:[...]}`. The paced entry additionally has `intervalSeconds:300`, `budgetBasis:"initial-load-reserve"` and `topUp:"immediately-available-above-reserve"`. Without configuration it serves `readers:[]`. Invalid configured files reject startup; there is no hot reload. The list describes configured identities and rules, without certifying liveness or available funds. Existing ticket marker fields are unchanged, and unlisted markers remain valid direct choices. HTTP GET/HEAD, ETag, wildcard CORS and two-second caching follow the existing tape contract; the public edge must allow this path and retain its Origin restrictions. Health checks include catalog content, cache and disallowed Origin probes.
+
+Each keeper obtains a Linux `flock` before initializing RPC, at the repository's fixed `keeper/data/locks/<cluster>-<signer>.lock`, even when data directories differ. Install the `flock` utility (usually util-linux). Contention or a missing utility rejects startup. Close, failed initialization and process death release the OS lock; lock files are never unlinked. This coordinates processes in one repository on one host, not different hosts. Give greedy and paced separate key files and state directories.
+
+Render existing services plus an optional paced unit into a staging directory, without installing or reloading systemd:
+
+```sh
+NO_DNA=1 node --import tsx scripts/install-services.ts --cluster mainnet \
+  --keeper-key "$GREEDY_KEY" --paced-key "$PACED_KEY" \
+  --paced-data "$PACED_DATA" --readers-file "$READERS_FILE" \
+  --render-only --out "$UNIT_OUTPUT"
+```
+
+The extra unit sets marks/paced-v1, disables automatic openings and uses its separate signer/state. The default keeper and tape receive the same catalog path. Equal signer paths or state directories, or missing required paced arguments, reject rendering. Omitting paced arguments retains the existing three units. Rendering does not enable or start services.
+
+Optional external policy replay fixtures can be supplied with `SPAN_READER_REPLAY_MODULE` (a replay model module) and `SPAN_READER_REPLAY_FIXTURE` (JSON settings and cases); they are unnecessary for the public suite. The runtime, balance, catalog and process-lock tests run with locally generated signers and a local VM/RPC adapter.

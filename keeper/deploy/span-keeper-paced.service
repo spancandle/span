@@ -1,0 +1,28 @@
+[Unit]
+Description=span paced reader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@/keeper
+Environment="PATH=@PATH@"
+Environment=NO_DNA=1
+Environment=SPAN_CLUSTER=@CLUSTER@
+Environment="KEEPER_KEYPAIR=@SIGNER@"
+Environment="KEEPER_DATA_DIR=@KEEPER_DATA@"
+Environment="SPAN_READERS_FILE=@READERS_FILE@"
+Environment=KEEPER_ACTION_MODE=marks
+Environment=KEEPER_MARK_POLICY=paced-v1
+Environment=KEEPER_RELEASE_HOURS=0
+Environment=KEEPER_HALF_HOURS=0
+Environment=KEEPER_ALLOW_MAINNET=1
+Environment="SPAN_WS_URL=@WS@"
+ExecStart=@NPM@ run keeper
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -8,6 +8,7 @@ import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { RpcPool } from "../src/common/rpc.js";
 import { cluster, dataDir, sleep, ROOT } from "../src/common/env.js";
 import { rpcSecrets, scanBytes } from "./leak-scan.js";
+import { readersDocument, validateReaders } from "../src/common/readers.js";
 export type Scope = "local" | "data" | "all";
 export type HealthDeps = {
   now(): number; sleep(ms: number): Promise<void>;
@@ -36,7 +37,31 @@ export async function health(deps: HealthDeps, options: HealthOptions) {
   await check("chain listing age", () => chain && now - chain.listedAt >= -2000 && now - chain.listedAt <= 10000);
   await check("loopback listeners", async () => (await deps.listeners()).every(l => l.address.startsWith("127.0.0.1:")));
   await check("keeper balance", async () => await deps.balance() >= 20000000);
+  const validReaders = (value: any) => {
+    if (value?.v !== 1 || !["mainnet", "devnet"].includes(value.cluster) || !Array.isArray(value.readers)) return false;
+    const config = value.readers.length ? validateReaders({ v: 1, readers: value.readers.map((r: any) =>
+      ({ id: r.id, marker: r.marker, mode: r.mode, policy: r.policy })) }) : undefined;
+    return JSON.stringify(value) === JSON.stringify(readersDocument(value.cluster, config));
+  };
+  await check("readers catalog", async () => {
+    const value = await deps.read("readers.json"), r = await deps.fetch(`${local}/readers.json`);
+    return r.ok && validReaders(value) && JSON.stringify(await r.json()) === JSON.stringify(value);
+  });
   if (options.scope !== "local") {
+    await check("shared readers.json", async () => {
+      const r = await deps.fetch(`${data}/readers.json`), value = await r.json();
+      return r.ok && validReaders(value) && JSON.stringify(value) === JSON.stringify(await deps.read("readers.json"));
+    });
+    await check("cache readers.json", async () => {
+      let hit = false;
+      for (let i = 0; i < 10; i++) {
+        const r = await deps.fetch(`${data}/readers.json`), age = Number(r.headers.get("age") ?? 0);
+        hit ||= r.headers.get("cf-cache-status") === "HIT";
+        if (!r.ok || !validReaders(await r.json()) || !Number.isFinite(age) || age < 0 || age > 2) return false;
+        if (i < 9) await deps.sleep(200);
+      }
+      return hit;
+    });
     const hosts = [new URL(data).hostname, ...(options.scope === "all" ? [new URL(site).hostname, "www." + new URL(site).hostname.replace(/^www\./, "")] : [])];
     for (const host of hosts) await check(`DNS ${host}`, async () => { const [ips, own] = await Promise.all([deps.dns(host), deps.publicIps()]); return ips.length > 0 && ips.every(ip => !own.includes(ip)); });
     for (const name of shared) {
@@ -56,6 +81,7 @@ export async function health(deps: HealthDeps, options: HealthOptions) {
       });
     }
     const nonce = Math.random().toString(36).slice(2), probes: [string, RequestInit][] = [
+      ["/readers.json", { headers: { Origin: `https://n${nonce}.invalid` } }],
       [`/v2/state.json?x=${nonce}`, {}], ["/v2/state.json", { headers: { Origin: `https://n${nonce}.invalid` } }],
       [`/state.json?x=${nonce}`, {}], ["/nope.json", {}], ["/status.json", {}], ["/state.json", { method: "POST" }],
       ["/state.json", { headers: { Origin: `https://n${nonce}.invalid` } }], ...FORWARD_HEADERS.map(name => ["/state.json", { headers: { [name]: `${nonce}.invalid` } }] as [string, RequestInit]),
