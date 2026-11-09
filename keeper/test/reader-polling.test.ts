@@ -3,6 +3,8 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { setImmediate as realImmediate } from "node:timers/promises";
+import { performance } from "node:perf_hooks";
 import { createKeyPairSignerFromBytes, getBase58Decoder, lamports, type Address } from "@solana/kit";
 import { Harness } from "../../program/tests/harness.js";
 import * as s from "../../program/client/index.js";
@@ -37,6 +39,14 @@ afterAll(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const T0 = 360000n, P0 = 10000000000n;
+async function realUntil(ready: () => boolean, label: string) {
+  const deadline = performance.now() + 5000;
+  do {
+    await realImmediate();
+    if (ready()) return;
+  } while (performance.now() < deadline);
+  throw Error(`Timed out waiting for ${label}`);
+}
 async function signer(dir: string, name: string) {
   const key = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" }),
     bytes = Buffer.concat([Buffer.from(key.d!, "base64url"), Buffer.from(key.x!, "base64url")]), file = join(dir, name + ".json");
@@ -105,6 +115,20 @@ async function setup(mode: "marks" | "full", elapsed: number, own = false, fligh
   vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   vi.setSystemTime(Number(T0 + BigInt(elapsed)) * 1000);
   const live = await runKeeper({ releaseHours: [] });
+  // Native crypto and RPC continuations must finish before the next fake clock tick.
+  // The deliberately blocked Sender response is awaited separately after release.
+  const settle = () => realUntil(() =>
+    (live.chain as unknown as { busy: Set<string> }).busy.size === 0 &&
+    (live.engine as unknown as { preparing: Set<string> }).preparing.size === 0,
+    "reader polling and preparation");
+  const advance = async (ms: number) => {
+    const end = Date.now() + ms;
+    await settle();
+    while (Date.now() < end) {
+      await vi.advanceTimersByTimeAsync(Math.min(50, end - Date.now()));
+      await settle();
+    }
+  };
   const snapshot = (label: string, from: number) => {
     const rows = calls.filter(c => c.at > from), methods: Record<string, number> = {};
     for (const c of rows) methods[c.method] = (methods[c.method] ?? 0) + 1;
@@ -114,7 +138,7 @@ async function setup(mode: "marks" | "full", elapsed: number, own = false, fligh
     reports[label] = report; console.log("READER_POLLING", JSON.stringify({ label, methods, feed: report.feed.length })); return report;
   };
   return { h, ticket, live, calls, raw, paced, sender: () => sender!, release: () => release!(), snapshot,
-    advance: (ms: number) => vi.advanceTimersByTimeAsync(ms) };
+    advance };
 }
 
 it("marks stays idle for ten minutes of another reader's active candle", async () => {
@@ -157,13 +181,15 @@ it("marks keeps fast polling past its window while an actual Sender flight is un
   const x = await setup("marks", 3618, true, true);
   try {
     const from = Date.now();
-    for (let i = 0; i < 20 && !x.sender().flights.size; i++) await x.advance(50);
+    await x.advance(50);
+    await realUntil(() => x.sender().flights.size === 1, "the signed flight before the window ends");
     expect(x.sender().flights.size).toBe(1);
     await x.advance(4100 - (Date.now() - from));
     expect(x.live.chain.now()).toBeGreaterThan(T0 + 3620n); expect(x.sender().flights.size).toBe(1);
     const r = x.snapshot("marks-flight-tail", from);
     expect(r.hash).toContain(4000); expect(r.feed.some(t => t >= 4000)).toBe(true);
-    x.release(); await x.advance(0); expect(x.sender().flights.size).toBe(0);
+    x.release(); await realUntil(() => x.sender().flights.size === 0, "the released Sender response");
+    await x.advance(0); expect(x.sender().flights.size).toBe(0);
     const idle = Date.now(); await x.advance(6000); const stopped = x.snapshot("marks-after-flight", idle);
     expect(stopped.feed).toHaveLength(0); expect(stopped.hash).toHaveLength(0); expect(stopped.methods.getProgramAccounts ?? 0).toBe(0);
   } finally { x.live.close(); }
