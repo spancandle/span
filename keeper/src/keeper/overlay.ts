@@ -6,9 +6,10 @@ export class Overlay {
   constructor(
     readonly chain: Chain,
     readonly sender: Sender,
+    readonly activity?: () => boolean,
   ) {}
   start() {
-    this.chain.start("keeper");
+    this.chain.start("keeper", this.activity);
     this.timer = setInterval(() => {
       if (!this.chain.ws.ready)
         void this.sender.pollDisconnected().catch(() => {});

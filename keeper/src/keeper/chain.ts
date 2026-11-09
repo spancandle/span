@@ -20,13 +20,13 @@ import { log, type Logger } from "../common/log.js";
 export const CLOCK = "SysvarC1ock11111111111111111111111111111111";
 export const bytes = (raw: any) => Buffer.from(raw?.data?.[0] ?? "", "base64");
 export type SpanHoldRead = { amount: bigint; burned: bigint; slot: number; read: number;
-  buyer?: Address | null; marker?: Address; spanLoaded?: bigint; stepBps?: number };
+  buyer?: Address | null; marker?: Address; spanLoaded?: bigint; stepBps?: number; marks?: number };
 /** Only a coherent ticket/holding pair can establish the paced reader's current balance. */
 export function pairedSpanBalance(ticket: Live<s.Ticket>, held?: SpanHoldRead) {
   const t = ticket.value;
   return held && held.slot >= ticket.slot && held.buyer === (unwrapOption(t.buyer) ?? null) &&
     held.marker === t.marker && held.spanLoaded === t.spanLoaded && held.stepBps === t.stepBps &&
-    held.burned === t.burned ? held.amount : undefined;
+    held.burned === t.burned && held.marks === t.marks ? held.amount : undefined;
 }
 // Each ticket burn increases burned by the amount removed from the holding.
 export function spanHeld(t: Pick<s.Ticket, "spanLoaded" | "burned">, held?: SpanHoldRead) {
@@ -107,6 +107,13 @@ export class Chain {
     return [...this.candles.values()].some(
       ({ value: c }) => now >= c.t0 - 30n && now <= s.settleAfter(c) + 60n,
     );
+  }
+  ownWork(now = this.now()) {
+    return [...this.tickets.values()].some(({ value: t }) => {
+      if (t.marker !== this.keeper || t.state !== s.TicketState.Sold || t.spanLoaded <= 0n) return false;
+      const c = [...this.candles.values()].find(x => x.value.t0 === t.t0)?.value;
+      return !!c && now >= t.t0 - 120n && now <= t.t0 + secsOf(t.t0) + BigInt(c.ageLimit);
+    });
   }
   recording(asset?: Asset) {
     const now = this.now();
@@ -293,7 +300,7 @@ export class Chain {
           }
           this.spanHolds.set(key, { amount, burned: paired.burned, slot: v.context.slot, read,
             buyer: unwrapOption(paired.buyer) ?? null, marker: paired.marker,
-            spanLoaded: paired.spanLoaded, stepBps: paired.stepBps });
+            spanLoaded: paired.spanLoaded, stepBps: paired.stepBps, marks: paired.marks });
         }
         this.onChange();
       } catch {
@@ -343,7 +350,7 @@ export class Chain {
       .catch(() => this.logger({ event: "state-read-error", method: name }))
       .finally(() => this.busy.delete(name));
   }
-  start(role: "keeper" | "tape") {
+  start(role: "keeper" | "tape", activity?: () => boolean) {
     for (const kind of ["candle", "ticket", "until", "resale", "bid", "request"] as const)
       this.stops.push(
         this.ws.subscribe(
@@ -390,7 +397,7 @@ export class Chain {
     this.timers.push(
       setInterval(() => {
         const at = Date.now(),
-          active = this.active();
+          active = activity ? activity() : this.active();
         if (role === "tape" && at - full >= 15000) {
           full = at;
           this.job("full", () => this.full());

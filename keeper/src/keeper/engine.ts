@@ -15,6 +15,7 @@ import type { Action, Prepared } from "./sender.js";
 import type { CreationBudget } from "./budget.js";
 import { log, type Logger } from "../common/log.js";
 export class BidderAccountUnavailable extends Error {}
+type SentMark = Pick<Ticket, "t0" | "marks" | "spanLoaded" | "marker"> & { buyer: Address | null };
 export type EnginePort = {
   blockhash: () => string | undefined;
   price: (action: Action) => bigint;
@@ -33,6 +34,9 @@ export class Engine {
   private preparing = new Set<string>();
   private maximum = new Map<string, bigint>();
   private marked = new Map<string, string>();
+  // Signature acknowledgement can precede account observations, including a free mark.
+  private sentMarks = new WeakMap<Prepared, SentMark>();
+  private awaitingMarks = new Map<string, SentMark>();
   private next = new Map<string, number>();
   private marks = new Map<string, number>();
   private reads = new Set<string>();
@@ -79,6 +83,7 @@ export class Engine {
   private actions(): Action[] {
     const now = this.chain.now(),
       out: Action[] = [];
+    for (const key of this.awaitingMarks.keys()) this.observationPending(key);
     for (const t0 of this.releaseHours) {
       const key = `open:${t0}`;
       if (this.canOpen(t0) && !this.abandoned.has(key)) {
@@ -179,6 +184,7 @@ export class Engine {
         t.state === TicketState.Sold &&
         t.spanLoaded > 0n &&
         t.marker === this.keeper &&
+        (this.options.policy !== "paced-v1" || now <= c.t0 + secsOf(c.t0) + BigInt(c.ageLimit)) &&
         this.chain.config &&
         unwrapOption(this.chain.config.spanMint) &&
         c.reads[0].price > 0n &&
@@ -239,6 +245,28 @@ export class Engine {
         this.complete(key);
     return out;
   }
+  private observationPending(key: string) {
+    const sent = this.awaitingMarks.get(key);
+    if (!sent) return false;
+    const live = this.chain.tickets.get(key as Address), t = live?.value,
+      c = [...this.chain.candles.values()].find(x => x.value.t0 === sent.t0)?.value;
+    if (!t || !c || t.state !== TicketState.Sold || t.marker !== this.keeper ||
+        t.marker !== sent.marker || t.t0 !== sent.t0 ||
+        (unwrapOption(t.buyer) ?? null) !== sent.buyer || t.spanLoaded === 0n ||
+        t.spanLoaded < sent.spanLoaded || this.chain.now() > c.t0 + secsOf(c.t0) + BigInt(c.ageLimit)) {
+      this.awaitingMarks.delete(key);
+      return false;
+    }
+    const pair = this.chain.spanHolds?.get(key as Address);
+    if (pair?.marks !== undefined && pair.marks > sent.marks && pairedSpanBalance(live!, pair) !== undefined) {
+      this.awaitingMarks.delete(key);
+      return false;
+    }
+    return true;
+  }
+  private markWaiting(a: Action) {
+    return a.kind === "mark" && this.observationPending(a.ticket!);
+  }
   private funded(key: string, t: Ticket) {
     const held = this.chain.spanHolds?.get(key as Address),
       balance = spanHeld(t, held),
@@ -289,6 +317,7 @@ export class Engine {
     return false;
   }
   private eligible(a: Action) {
+    if (this.markWaiting(a)) return false;
     if (a.kind === "closeRequest") {
       const value=this.chain.requests?.get(a.request as Address)?.value;
       return !!value && this.chain.now() > value.until + 2n;
@@ -346,7 +375,7 @@ export class Engine {
           !markAccepts(c, t, v.price).accepted
         )
           continue;
-        const reason = this.hold(c, v)
+        const reason = this.markWaiting(a) ? "mark-observation-pending" : this.hold(c, v)
           ? "read-pending"
           : this.pending.has(a.key)
             ? "mark-pending"
@@ -381,7 +410,7 @@ export class Engine {
           this.seen.set(a.key, rows);
         }
       }
-      if (this.pending.has(a.key) || (this.next.get(a.key) ?? 0) > Date.now())
+      if (this.markWaiting(a) || this.pending.has(a.key) || (this.next.get(a.key) ?? 0) > Date.now())
         continue;
       const p = this.prepared.get(a.key),
         hash = this.port.blockhash();
@@ -406,13 +435,18 @@ export class Engine {
           `${v.publishTs}:${v.price}`,
         );
       if (a.kind === "open") this.opening.add(a.key);
+      if (a.kind === "mark" && this.options.policy === "paced-v1") {
+        const t = this.chain.tickets.get(a.ticket as Address)!.value;
+        this.sentMarks.set(p, { t0: t.t0, marks: t.marks, spanLoaded: t.spanLoaded,
+          marker: t.marker, buyer: unwrapOption(t.buyer) ?? null });
+      }
       this.port.send(p, v);
     }
   }
   warm(a: Action) {
     if (this.options.mode === "marks" && a.kind !== "mark")
       throw Error("Marks-only keeper cannot prepare this action");
-    if (this.preparing.has(a.key) || !this.port.blockhash()) return;
+    if (this.markWaiting(a) || this.preparing.has(a.key) || !this.port.blockhash()) return;
     this.preparing.add(a.key);
     const max = this.maximum.get(`${a.key}:${this.port.blockhash()}`) ?? -1n;
     const selected = this.port.price(a),
@@ -420,7 +454,7 @@ export class Engine {
     void this.port
       .prepare(a, price)
       .then((p) => {
-        if (!this.closed && (a.kind !== "open" ||
+        if (!this.closed && !this.markWaiting(a) && (a.kind !== "open" ||
             (this.canOpen(a.t0) && !this.abandoned.has(a.key)))) {
           this.prepared.set(a.key, p);
           this.preparing.delete(a.key);
@@ -458,11 +492,17 @@ export class Engine {
       this.update();
     } else if (stage === "signature" && error === null) {
       if (p.action.kind === "mark") {
-        const current = this.chain.tickets.get(
-          p.action.ticket as Address,
-        )?.value;
-        if (current?.marks === this.marks.get(p.action.ticket!))
+        if (this.options.policy === "paced-v1") {
+          const sent = this.sentMarks.get(p);
+          if (sent) this.awaitingMarks.set(p.action.ticket!, sent);
           this.marked.delete(p.action.key);
+        } else {
+          const current = this.chain.tickets.get(
+            p.action.ticket as Address,
+          )?.value;
+          if (current?.marks === this.marks.get(p.action.ticket!))
+            this.marked.delete(p.action.key);
+        }
       }
       this.update();
     }

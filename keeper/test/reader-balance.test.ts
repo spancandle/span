@@ -49,6 +49,28 @@ async function observe(h: Harness, t: Ref) {
   };
   return { chain, rpc, raw, sync, engine, sent, logs, feed, update, land };
 }
+it("a free signature waits through ticket-only observations and elapsed time until its coherent pair", async () => {
+  const h = await Harness.create({ setSpan: true }), t = await h.open({ loaded: true, strikeBps: 100 });
+  h.clock(t.t0); h.price(10000000000n, t.t0); await h.send("first_read", h.readIx(t, 0));
+  h.clock(t.t0 + 60n);
+  const o = await observe(h, t);
+  try {
+    o.feed(10010000000n); await o.update(); expect(o.sent).toHaveLength(1);
+    const landed = capture(h, o.sent[0].wire); expect(landed.tx.meta.err).toBe(null);
+    expect(h.ticketState(t).marks).toBe(1); expect(h.ticketState(t).burned).toBe(0n);
+    o.engine.result(o.sent[0], null, "signature");
+    const prepare = vi.spyOn(o.engine.port, "prepare");
+    h.clock(t.t0 + 70n); o.feed(10020000000n); await o.update();
+    await o.sync(false); await o.update(); // ticket marks increased; the paired marks did not
+    expect(o.chain.tickets.get(t.ticket)!.value.marks).toBe(1);
+    expect(o.chain.spanHolds.get(t.ticket)!.marks).toBe(0);
+    expect(pairedSpanBalance(o.chain.tickets.get(t.ticket)!, o.chain.spanHolds.get(t.ticket))).toBeUndefined();
+    h.clock(t.t0 + 2500n); o.feed(10030000000n); await o.update();
+    expect(prepare).not.toHaveBeenCalled(); expect(o.sent).toHaveLength(1);
+    await o.chain.pollSpanHolds("keeper"); await o.update();
+    expect(o.chain.spanHolds.get(t.ticket)!.marks).toBe(1); expect(o.sent).toHaveLength(2);
+  } finally { o.engine.close(); }
+});
 for (const via of ["resale", "bid", "request"] as const) it(`coherent pairs resume after ${via} gives a new owner a smaller load than lifetime burned`, async () => {
   const x = via === "request" ? await requestFixture({ loaded: true, strikeBps: 100 }) : await bidFixture({ loaded: true, strikeBps: 100 }), { h, t, actors } = x;
   // Ten actual paid marks leave lifetime burned larger than the next owner's initial load.
@@ -87,7 +109,7 @@ it("ignores reversed/stale RPC pairs, preserves balance on failure and compares 
     const live = o.chain.tickets.get(t.ticket)!, pair = o.chain.spanHolds.get(t.ticket)!;
     expect(pairedSpanBalance({ ...live, value: { ...live.value, buyer: structuredClone(live.value.buyer) } }, pair)).toBe(pair.amount);
     for (const change of [{ buyer: h.stranger.address }, { marker: h.stranger.address }, { spanLoaded: pair.spanLoaded! + 1n },
-      { burned: pair.burned + 100n }, { stepBps: pair.stepBps! + 1 }, { slot: live.slot - 1 }])
+      { burned: pair.burned + 100n }, { stepBps: pair.stepBps! + 1 }, { marks: pair.marks! + 1 }, { slot: live.slot - 1 }])
       expect(pairedSpanBalance(live, { ...pair, ...change })).toBeUndefined();
     expect(pairedSpanBalance(live, { amount: pair.amount, burned: pair.burned, slot: pair.slot, read: pair.read })).toBeUndefined();
     const responses: ((v: any) => void)[] = [];

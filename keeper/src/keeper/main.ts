@@ -288,12 +288,15 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
     sender.onSlot();
     engine.update();
   };
-  const overlay = new Overlay(chain, sender);
+  const activity = reader.mode === "marks" ? () => chain.ownWork() || sender.flights.size > 0 : undefined;
+  const overlay = new Overlay(chain, sender, activity);
   stopChain = () => overlay.close();
   let busy = false;
+  let refreshedAt = 0;
   const refresh = async () => {
     if (busy) return;
     busy = true;
+    if (reader.mode === "marks") refreshedAt = Date.now();
     try {
       const [hash, height] = await Promise.all([
         rpc.call("getLatestBlockhash", [{ commitment: "confirmed" }]),
@@ -315,8 +318,17 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
   await refresh();
   overlay.start();
   void budget.reconcile().then(() => engine.update());
+  let hadOwnWork = reader.mode === "marks" && chain.ownWork(), refreshOnWork = false;
   const timers = [
-    setInterval(() => void refresh(), 2000),
+    reader.mode === "marks" ? setInterval(() => {
+      const own = chain.ownWork();
+      refreshOnWork = own && (refreshOnWork || !hadOwnWork);
+      hadOwnWork = own;
+      if (!busy && (refreshOnWork || Date.now() - refreshedAt >= (own || sender.flights.size > 0 ? 2000 : 60000))) {
+        refreshOnWork = false;
+        void refresh();
+      }
+    }, 50) : setInterval(() => void refresh(), 2000),
     setInterval(() => engine.update(), 50),
     setInterval(() => void priorities.refresh(), 100),
     setInterval(

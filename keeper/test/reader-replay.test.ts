@@ -46,7 +46,7 @@ it.skipIf(!process.env.SPAN_READER_REPLAY_MODULE || !process.env.SPAN_READER_REP
             tailLow: actual.tailLow, marks: actual.marks, burned: actual.burned };
           state.remaining = amount(h.svm, t.spanHold); chain.tickets.set(t.ticket, { value: actual, slot: replay.slot, data: "" });
           chain.spanHolds.set(t.ticket, { amount: state.remaining, burned: actual.burned, slot: replay.slot, read: ++chain.spanRead,
-            buyer: h.buyer.address, marker: actual.marker, spanLoaded: actual.spanLoaded, stepBps: actual.stepBps });
+            buyer: h.buyer.address, marker: actual.marker, spanLoaded: actual.spanLoaded, stepBps: actual.stepBps, marks: actual.marks });
         } else { state.settled = true; state.remaining = state.initial - state.t.burned; chain.tickets.delete(t.ticket); }
       };
       sync();
