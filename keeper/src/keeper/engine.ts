@@ -14,6 +14,8 @@ import type { FeedValue } from "../common/feed.js";
 import type { Action, Prepared } from "./sender.js";
 import type { CreationBudget } from "./budget.js";
 import { log, type Logger } from "../common/log.js";
+import { OPEN_HOURS } from "../common/open-hours.js";
+const OPEN_READS = new Set(OPEN_HOURS);
 export class BidderAccountUnavailable extends Error {}
 type SentMark = Pick<Ticket, "t0" | "marks" | "spanLoaded" | "marker"> & { buyer: Address | null };
 export type EnginePort = {
@@ -100,6 +102,7 @@ export class Engine {
     }
     for (const [key, { value: c }] of this.chain.candles) {
       if (!this.releaseHours.has(c.t0) &&
+          !(this.options.mode === "full" && OPEN_READS.has(c.t0)) &&
           ![...this.chain.tickets.values()].some((x) => x.value.t0 === c.t0))
         continue;
       const feed = this.feed(c.t0);

@@ -15,6 +15,7 @@ import { prepareTransaction, Sender, type Action } from "./sender.js";
 import { Engine, BidderAccountUnavailable } from "./engine.js";
 import { Overlay } from "./overlay.js";
 import { RELEASE_HOURS } from "../common/release-hours.js";
+import { OPEN_HOURS } from "../common/open-hours.js";
 import { EventHoursFile, eventHoursPath } from "../common/event-hours.js";
 import { keeperTelemetry } from "../common/telemetry.js";
 import { readerOptions, type ReaderOptions } from "./reader-policy.js";
@@ -232,7 +233,10 @@ export async function runKeeper(options: {releaseHours?:readonly bigint[]} = {})
   );
   cleanup.push(() => sender.close());
   const prepare = await createPrepare(rpc, payer, chain, priorities, () => latest, reader);
-  const releases = reader.mode === "marks" ? [] : releaseStarts(options.releaseHours ?? (process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : []),assets);
+  const releases = reader.mode === "marks" ? [] : [
+    ...releaseStarts(options.releaseHours ?? (process.env.KEEPER_RELEASE_HOURS === "1" ? RELEASE_HOURS : []),assets),
+    ...(process.env.KEEPER_OPEN_HOURS === "1" ? OPEN_HOURS : []),
+  ];
   const engine = new Engine(
     chain,
     payer.address,

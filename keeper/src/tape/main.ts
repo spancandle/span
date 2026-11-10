@@ -16,6 +16,7 @@ import { httpServer, atomicFile } from "./http.js";
 import { readKeeperTelemetry } from "../common/telemetry.js";
 import { ROOT } from "../common/env.js";
 import { RELEASE_HOURS } from "../common/release-hours.js";
+import { OPEN_HOURS } from "../common/open-hours.js";
 import { EventHoursFile, eventHoursPath } from "../common/event-hours.js";
 import { loadReaders, readersDocument } from "../common/readers.js";
 export async function runTape() {
@@ -64,7 +65,7 @@ export async function runTape() {
       recorder,
       pub,
       (m) => decimals.get(m),
-      () => [...RELEASE_HOURS, ...(listed?.t0s() ?? [])],
+      () => [...RELEASE_HOURS, ...OPEN_HOURS, ...(listed?.t0s() ?? [])],
       () => ({ hours: listed?.hours ?? [], hide: listed?.hide ?? [] }),
     ),
     chainReader = new ChainReader(rpc, pub, history),
