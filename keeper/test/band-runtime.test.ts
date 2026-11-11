@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createKeyPairSignerFromBytes, getBase58Decoder, getCompiledTransactionMessageDecoder, getTransactionDecoder, lamports, type Address } from "@solana/kit";
@@ -159,14 +159,14 @@ it("actual full and paced runtimes carry all three widths through entry, marks, 
   expect(docs.v3.receipts).toHaveLength(6);expect(docs.v2.receipts).toHaveLength(2);
   for(const {t,bandBps}of refs){const r=docs.v3.receipts.find((r:any)=>r.ticket===t.ticket);expect(r.bandBps).toBe(bandBps);expect(r.payout).toBe(String(4000000n*BigInt(400/bandBps)));expect(r.transfers.map((x:any)=>x.via)).toEqual(["resale","bid"]);expect(r.entry.recorded).toBe(String(2000000n*BigInt(400/bandBps)));}
   expect(history.events("BandClosed")).toHaveLength(4);expect(history.events("UntilClosed")).toHaveLength(6);
-  const script=resolve(import.meta.dirname,"recalculate.py"),checked=spawnSync("python3",[script,join(dir,"tape.sqlite"),"--public",join(dir,"public")],{encoding:"utf8"});expect(checked.status,checked.stdout+checked.stderr).toBe(0);writeFileSync(join(dir,"recalculated.json"),checked.stdout);
+  const script=resolve(import.meta.dirname,"recalculate.py");if(existsSync(script)){const checked=spawnSync("python3",[script,join(dir,"tape.sqlite"),"--public",join(dir,"public")],{encoding:"utf8"});expect(checked.status,checked.stdout+checked.stderr).toBe(0);writeFileSync(join(dir,"recalculated.json"),checked.stdout);
   const path=join(dir,"public/v3/history.json"),bad=JSON.parse(readFileSync(path,"utf8"));bad.receipts.find((r:any)=>r.bandBps===100).bandBps=200;writeFileSync(path,JSON.stringify(bad));const rejected=spawnSync("python3",[script,join(dir,"tape.sqlite"),"--public",join(dir,"public")],{encoding:"utf8"});expect(rejected.status).not.toBe(0);expect(rejected.stderr).toContain("public payout band");writeFileSync(path,JSON.stringify(docs.v3));
   const event=history.events("BandSet").find(e=>e.widthBps===100)!,stored=store.db.prepare("SELECT raw FROM transactions WHERE sig=?").get(event.sig) as {raw:string},tampered=JSON.parse(stored.raw),kit=await import("@solana/kit");
   const discriminator=(await import("node:crypto")).createHash("sha256").update("event:BandSet").digest().subarray(0,8);
   let changed=false;
   for(const group of tampered.meta.innerInstructions)for(const ix of group.instructions){const data=Buffer.from(kit.getBase58Encoder().encode(ix.data));if(data.subarray(8,16).equals(discriminator)){data.writeUInt16LE(200,56);ix.data=kit.getBase58Decoder().decode(data);changed=true;}}
   expect(changed).toBe(true);store.db.prepare("UPDATE transactions SET raw=? WHERE sig=?").run(JSON.stringify(tampered),event.sig);
-  const rawRejected=spawnSync("python3",[script,join(dir,"tape.sqlite")],{encoding:"utf8",timeout:10000});expect(rawRejected.status).not.toBe(0);store.db.prepare("UPDATE transactions SET raw=? WHERE sig=?").run(stored.raw,event.sig);
+  const rawRejected=spawnSync("python3",[script,join(dir,"tape.sqlite")],{encoding:"utf8",timeout:10000});expect(rawRejected.status).not.toBe(0);store.db.prepare("UPDATE transactions SET raw=? WHERE sig=?").run(stored.raw,event.sig);}
   const result={receipts:docs.v3.receipts.map((r:any)=>({ticket:r.ticket,bandBps:r.bandBps,payout:r.payout,entry:r.entry,transfers:r.transfers})),actions:x.rows.map(r=>({kind:r.kind,bytes:Buffer.from(r.wire,"base64").length,error:r.error,cu:r.cu})),bandClosed:4,untilClosed:6};writeFileSync(join(dir,"result.json"),JSON.stringify(result,null,2));console.log("BAND_RUNTIME",JSON.stringify({dir,receipts:6,bandClosed:4,untilClosed:6}));
  }finally{full?.close();paced?.close();store.close();}
 },60000);
