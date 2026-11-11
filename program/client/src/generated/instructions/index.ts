@@ -11,6 +11,7 @@ export * from "./bidSpan.js";
 export * from "./buy.js";
 export * from "./buyResale.js";
 export * from "./buyRunning.js";
+export * from "./closeBand.js";
 export * from "./closeBid.js";
 export * from "./closeRequest.js";
 export * from "./closeResale.js";

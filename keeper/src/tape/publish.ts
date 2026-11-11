@@ -6,11 +6,11 @@ import type { Store } from "../common/sqlite.js";
 import type { Chain } from "../keeper/chain.js";
 import type { History } from "./history.js";
 import type { DovesRecorder } from "./doves.js";
-import { readdirSync, unlinkSync } from "node:fs";
+import { readdirSync, unlinkSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { atomicFile, atomicText } from "./http.js";
-import { liveDocuments, legacyStart, markLog, candleReads, entryOf } from "./state.js";
+import { liveDocuments, legacyStart, markLog, candleReads, entryOf, historicalBand } from "./state.js";
 import { json } from "../common/env.js";
 import { log, safeError } from "../common/log.js";
 import { getCandleDecoder } from "../../../program/client/index.js";
@@ -23,6 +23,7 @@ import {transfersOf} from './transfers.js';
 const RETAIN = 8 * 86400;
 export class Publisher {
   private v2?: Publisher;
+  private v3?: Publisher;
   private liveAt = 0;
   private content = "";
   private historyAt = 0;
@@ -47,18 +48,19 @@ export class Publisher {
     // The hours history keeps without a ticket; a function follows a list that is read again.
     readonly releaseHours: readonly bigint[] | (() => readonly bigint[]) = RELEASE_HOURS,
     readonly listed: () => EventHours = () => ({ hours: [], hide: [] }),
-    readonly version: 1|2 = 1,
+    readonly version: 1|2|3 = 1,
   ) {
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS candle_path(t0 TEXT PRIMARY KEY,raw TEXT NOT NULL)",
     );
   }
-  versioned(): Publisher {
-    if(this.version===2)return this;
-    return this.v2??=new Publisher(this.store,this.chain,this.history,this.recorder,resolve(this.dir,'v2'),this.spanDecimals,this.releaseHours,this.listed,2);
+  versioned(version: 2|3 = 2): Publisher {
+    if(this.version===version)return this;
+    if(version===3)return this.v3??=new Publisher(this.store,this.chain,this.history,this.recorder,resolve(this.dir,'v3'),this.spanDecimals,this.releaseHours,this.listed,3);
+    return this.v2??=new Publisher(this.store,this.chain,this.history,this.recorder,resolve(this.dir,this.version===3?'../v2':'v2'),this.spanDecimals,this.releaseHours,this.listed,2);
   }
-  private visible(t0:bigint|string|number){return this.version===2||legacyStart(t0);}
-  private cacheKey(t0:string){return this.version===2?`v2:${t0}`:t0;}
+  private visible(t0:bigint|string|number){return this.version>=2||legacyStart(t0);}
+  private cacheKey(t0:string){return this.version>=2?`v${this.version}:${t0}`:t0;}
   prune(now: number) {
     this.recorder.prune(now);
     this.prunedBefore = Math.max(this.prunedBefore, now - RETAIN);
@@ -134,7 +136,7 @@ export class Publisher {
           d = this.doves(t0, Math.min(now, t0 + Number(secsOf(t0))),feed);
         return {
           t0: String(t0),
-          ...(this.version===2?{secs:Number(secsOf(t0)),asset:nameOf(assetOf(t0))}:{}),
+          ...(this.version>=2?{secs:Number(secsOf(t0)),asset:nameOf(assetOf(t0))}:{}),
           high: d?.high ?? null,
           low: d?.low ?? null,
           last: last
@@ -181,16 +183,16 @@ export class Publisher {
       })),
       ...sellers,
     ].sort((a, b) => (BigInt(a.t0) < BigInt(b.t0) ? -1 : 1));
-    return { v: this.version, generated: Date.now(), hours: rows.filter(h=>this.visible(h.t0)).map(h=>({...h,asset:nameOf(assetOf(BigInt(h.t0))),...(this.version===2?{secs:Number(secsOf(BigInt(h.t0)))}:{})})) };
+    return { v: this.version, generated: Date.now(), hours: rows.filter(h=>this.visible(h.t0)).map(h=>({...h,asset:nameOf(assetOf(BigInt(h.t0))),...(this.version>=2?{secs:Number(secsOf(BigInt(h.t0)))}:{})})) };
   }
   historyDocument() {
     const receipts = this.history
         .events("Settled")
-        .filter(x=>this.visible(x.t0))
+        .filter(x=>this.visible(x.t0) && (this.version===3||historicalBand(this.history,x.ticket)===400))
         .reverse()
         .slice(0, 500)
-        .map((x) => ({ ...x, entry:entryOf(this.history,x.ticket), transfers:transfersOf(this.history,x.ticket), asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
-      withdrawals = this.history.events("Withdrawn").filter(x=>this.visible(x.t0)).reverse().slice(0, 500).map(x=>({...x,asset:nameOf(assetOf(BigInt(x.t0)))})),
+        .map((x) => ({ ...x, ...(this.version===3?{bandBps:historicalBand(this.history,x.ticket)}:{}), entry:entryOf(this.history,x.ticket), transfers:transfersOf(this.history,x.ticket), asset:nameOf(assetOf(BigInt(x.t0))), markLog: markLog(this.history, x.ticket) })),
+      withdrawals = this.history.events("Withdrawn").filter(x=>this.visible(x.t0) && (this.version===3||historicalBand(this.history,x.ticket)===400)).reverse().slice(0, 500).map(x=>({...x,...(this.version===3?{bandBps:historicalBand(this.history,x.ticket)}:{}),asset:nameOf(assetOf(BigInt(x.t0)))})),
       ts = [...new Set([...receipts.map((x) => x.t0), ...this.closedReleaseHours()])]
         .sort((a, b) => (BigInt(a) > BigInt(b) ? -1 : 1))
         .slice(0, 200);
@@ -203,7 +205,7 @@ export class Publisher {
       const old = this.store.db
         .prepare("SELECT raw FROM candle_history WHERE t0=?")
         .get(this.cacheKey(t0)) as any;
-      const fallback=this.version===2&&!old?this.store.db.prepare("SELECT raw FROM candle_history WHERE t0=?").get(t0)as any:undefined;
+      const fallback=this.version>=2&&!old?this.store.db.prepare("SELECT raw FROM candle_history WHERE t0=?").get(t0)as any:undefined;
       const archived = old ? JSON.parse(old.raw) : fallback?JSON.parse(fallback.raw):undefined;
       const events = reads.filter((x) => x.t0 === t0),
         slots = Array.from({ length: lastReadOf(BigInt(t0))+1 }, (_, j) => {
@@ -230,7 +232,7 @@ export class Publisher {
             null);
       const value = {
         t0,
-        ...(this.version===2?{secs:Number(secsOf(BigInt(t0)))}:{}),
+        ...(this.version>=2?{secs:Number(secsOf(BigInt(t0)))}:{}),
         asset:nameOf(assetOf(BigInt(t0))),
         reads: c ? candleReads(c, reads) : slots,
         readHigh: c
@@ -262,7 +264,7 @@ export class Publisher {
       feed: this.outputFeed(asset),
       asset: nameOf(asset),
       t0: String(t0),
-      ...(this.version===2?{secs:Number(secsOf(t0))}:{}),
+      ...(this.version>=2?{secs:Number(secsOf(t0))}:{}),
       from: String(t0),
       ts: delta(rows.map((x) => x.publish_ts - t0)),
       p: delta(rows.map((x) => x.price)),
@@ -283,7 +285,7 @@ export class Publisher {
       .prepare("SELECT raw FROM candle_path WHERE t0=?")
       .get(this.cacheKey(t0)) as { raw: string } | undefined;
     let raw = stored?.raw;
-    if(!raw&&this.version===2){
+    if(!raw&&this.version>=2){
       const prior=this.store.db.prepare("SELECT raw FROM candle_path WHERE t0=?").get(t0)as {raw:string}|undefined;
       if(prior)raw=json({...JSON.parse(prior.raw),v:2,secs:Number(secsOf(t))});
     }
@@ -450,7 +452,7 @@ export class Publisher {
       }
     }
     if (this.chain.config)
-      atomicFile(this.dir, "feed.json", this.feedDocument());
+      atomicFile(this.dir, "feed.json", this.version===3?this.versioned(2).feedDocument():this.feedDocument());
     const hours = this.closedReleaseHours().join(",");
     const all =
       (this.store.revision !== this.historyRevision || hours !== this.historyHours) &&
@@ -465,7 +467,7 @@ export class Publisher {
     const list = this.listed(),
       key = `${this.store.revision}:${json(list)}`;
     if (key !== this.hoursKey) {
-      const doc = this.hoursDocument(),
+      const doc = this.version===3?this.versioned(2).hoursDocument():this.hoursDocument(),
         content = json(doc.hours);
       if (content !== this.hoursContent) {
         atomicFile(this.dir, "hours.json", doc);
@@ -473,6 +475,13 @@ export class Publisher {
       }
       this.hoursKey = key;
     }
-    if(this.version===1)this.versioned().publish(now);
+    if(this.version===1){
+      this.versioned().publish(now);
+      this.versioned(3).publish(now);
+      for(const name of ["feed.json","hours.json"]){
+        const path=resolve(this.dir,"v2",name);
+        if(existsSync(path))atomicText(resolve(this.dir,"v3"),name,readFileSync(path,"utf8"));
+      }
+    }
   }
 }

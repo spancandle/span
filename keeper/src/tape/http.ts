@@ -15,7 +15,7 @@ export function atomicText(dir: string, name: string, text: string) {
 export function atomicFile(dir: string, name: string, value: unknown) {
   atomicText(dir, name, json(value) + "\n");
 }
-const CANDLE = /^\/(v2\/)?candles\/([0-9]{1,12})\.json$/;
+const CANDLE = /^\/(v[23]\/)?candles\/([0-9]{1,12})\.json$/;
 export function httpServer(
   dir: string,
   read: (path: string) => Promise<Buffer> = readFile,
@@ -51,6 +51,7 @@ export function httpServer(
     if (
       !candle &&
       ![
+        ...["state","tickets","history","feed","hours","chain","readers"].map(name=>`/v3/${name}.json`),
         "/v2/state.json",
         "/v2/tickets.json",
         "/v2/feed.json",
@@ -71,7 +72,7 @@ export function httpServer(
       return;
     }
     // Candle paths share one counter so probes cannot grow the table.
-    const key = candle ? (match![1]?"/v2/candles/":"/candles/") : path;
+    const key = candle ? (match![1]?`/${match![1]}candles/`:"/candles/") : path;
     totals[key] = (totals[key] ?? 0) + 1;
     const event = { at: Date.now(), path: key, unavailable: false };
     events.push(event);
@@ -112,7 +113,7 @@ export function httpServer(
     const headers = {
       "content-type": "application/json; charset=utf-8",
       "access-control-allow-origin": "*",
-      "cache-control": ["/state.json", "/feed.json", "/chain.json", "/v2/state.json", "/v2/feed.json"].includes(
+      "cache-control": ["/state.json", "/feed.json", "/chain.json", "/v2/state.json", "/v2/feed.json", "/v3/state.json", "/v3/feed.json", "/v3/chain.json"].includes(
         path,
       )
         ? "public, max-age=1"

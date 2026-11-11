@@ -42,7 +42,12 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
-import { findConfigPda, findUntilPda, findVaultPda } from "../pdas/index.js";
+import {
+  findBandPda,
+  findConfigPda,
+  findUntilPda,
+  findVaultPda,
+} from "../pdas/index.js";
 import { SPAN_PROGRAM_ADDRESS } from "../programs/index.js";
 
 export const BUY_RUNNING_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -68,6 +73,7 @@ export type BuyRunningInstruction<
   TAccountFeed extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountBand extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -110,6 +116,9 @@ export type BuyRunningInstruction<
       TAccountProgram extends string
         ? ReadonlyAccount<TAccountProgram>
         : TAccountProgram,
+      TAccountBand extends string
+        ? ReadonlyAccount<TAccountBand>
+        : TAccountBand,
       ...TRemainingAccounts,
     ]
   >;
@@ -163,6 +172,7 @@ export type BuyRunningAsyncInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   config?: TAccountConfig;
   candle: TAccountCandle;
@@ -176,6 +186,7 @@ export type BuyRunningAsyncInput<
   feed: TAccountFeed;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band?: TAccountBand;
   maxPay: BuyRunningInstructionDataArgs["maxPay"];
 };
 
@@ -192,6 +203,7 @@ export async function getBuyRunningInstructionAsync<
   TAccountFeed extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: BuyRunningAsyncInput<
@@ -206,7 +218,8 @@ export async function getBuyRunningInstructionAsync<
     TAccountUntil,
     TAccountFeed,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -259,6 +272,10 @@ export async function getBuyRunningInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >
 > {
@@ -302,6 +319,7 @@ export async function getBuyRunningInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -341,6 +359,17 @@ export async function getBuyRunningInstructionAsync<
       { programAddress },
     );
   }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
 
   return Object.freeze({
     accounts: [
@@ -356,6 +385,7 @@ export async function getBuyRunningInstructionAsync<
       getAccountMeta("feed", accounts.feed),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getBuyRunningInstructionDataEncoder().encode(
       args as BuyRunningInstructionDataArgs,
@@ -410,6 +440,10 @@ export async function getBuyRunningInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -429,6 +463,7 @@ export type BuyRunningInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   config: TAccountConfig;
   candle: TAccountCandle;
@@ -442,6 +477,7 @@ export type BuyRunningInput<
   feed: TAccountFeed;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band: TAccountBand;
   maxPay: BuyRunningInstructionDataArgs["maxPay"];
 };
 
@@ -458,6 +494,7 @@ export function getBuyRunningInstruction<
   TAccountFeed extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: BuyRunningInput<
@@ -472,7 +509,8 @@ export function getBuyRunningInstruction<
     TAccountUntil,
     TAccountFeed,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): BuyRunningInstruction<
@@ -524,6 +562,10 @@ export function getBuyRunningInstruction<
   ResolvedInstructionAccountMeta<
     TAccountProgram,
     InstructionAccountInputAddress<TAccountProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
   >
 > {
   // Program address.
@@ -566,6 +608,7 @@ export function getBuyRunningInstruction<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -595,6 +638,7 @@ export function getBuyRunningInstruction<
       getAccountMeta("feed", accounts.feed),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getBuyRunningInstructionDataEncoder().encode(
       args as BuyRunningInstructionDataArgs,
@@ -649,6 +693,10 @@ export function getBuyRunningInstruction<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -671,6 +719,7 @@ export type ParsedBuyRunningInstruction<
     feed: TAccountMetas[9];
     eventAuthority: TAccountMetas[10];
     program: TAccountMetas[11];
+    band: TAccountMetas[12];
   };
   data: BuyRunningInstructionData;
 };
@@ -683,12 +732,12 @@ export function parseBuyRunningInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedBuyRunningInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 12) {
+  if (instruction.accounts.length < 13) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 12,
+        expectedAccountMetas: 13,
       },
     );
   }
@@ -713,6 +762,7 @@ export function parseBuyRunningInstruction<
       feed: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
+      band: getNextAccount(),
     },
     data: getBuyRunningInstructionDataDecoder().decode(instruction.data),
   };

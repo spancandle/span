@@ -7,12 +7,12 @@ import {Harness,type Wallet,amount,accountData} from './harness.js';
 export const P0=10000000000n;
 export const bidBudget=():Instruction[]=>{const programAddress='ComputeBudget111111111111111111111111111111'as Address,a=Buffer.alloc(5),b=Buffer.alloc(9);a[0]=2;a.writeUInt32LE(1400000,1);b[0]=3;b.writeBigUInt64LE(10000n,1);return[{programAddress,data:a},{programAddress,data:b}];};
 export type Actor={signer:Wallet;usdc:Address;span:Address};
-export async function bidFixture(o:{loaded?:boolean;opening?:boolean;secs?:bigint;spanProgram?:Address;mainnetRent?:boolean;setSpan?:boolean;strikeBps?:number}={}){
+export async function bidFixture(o:{loaded?:boolean;opening?:boolean;secs?:bigint;spanProgram?:Address;mainnetRent?:boolean;setSpan?:boolean;strikeBps?:number;bandBps?:number}={}){
  const h=await Harness.create({setSpan:o.setSpan??true,spanProgram:o.spanProgram});
  if(o.mainnetRent)h.svm.setRent(new Rent(5080n,1,50));
  const actors:Actor[]=[{signer:h.buyer,usdc:h.buyerUsdc,span:h.buyerSpan}];
  for(const signer of[h.stranger,h.admin])actors.push({signer,usdc:await h.fundToken(signer,USDC,TOKEN,1000000000n),span:await h.fundToken(signer,h.spanMint,h.spanProgram,1000000n)});
- const t=await h.open({t0:o.secs===1800n?1203n:1200n,sold:true,loaded:o.loaded??false,premium:1000000n,strikeBps:o.strikeBps??0}),resale=(await s.findResalePda(t.ticket))[0];
+ const t=await h.open({t0:o.secs===1800n?1203n:1200n,sold:true,loaded:o.loaded??false,premium:1000000n,strikeBps:o.strikeBps??0,bandBps:o.bandBps??400}),resale=(await s.findResalePda(t.ticket))[0];
  const holder=()=>actors.find(a=>a.signer.address===unwrapOption(h.ticketState(t).buyer))!;
  const ref=async(bidder=actors[1])=>{const bid=(await s.findBidPda(t.ticket,bidder.signer.address))[0];return{bid,bidUsdc:(await s.findBidUsdcPda(bid))[0],bidSpan:(await s.findBidSpanPda(bid))[0],bidder};};
  const place=async(bidder=actors[1],extra:any={})=>{const b=await ref(bidder);return h.ix('placeBid',{...t,...b,bidder:bidder.signer,bidderSource:bidder.usdc,ask:100000n,cap:40000000n,until:t.t0+s.secsOf(t.t0),...extra});};

@@ -1,6 +1,17 @@
 use anchor_lang::prelude::*;
 
 pub const VAULT_CAP: u64 = 40_000_000;
+pub const BANDS: [u16; 3] = [100, 200, 400];
+pub const BAND_DEFAULT: u16 = 400;
+
+#[account]
+#[derive(InitSpace)]
+pub struct Band {
+    pub ticket: Pubkey,
+    pub seller: Pubkey,
+    pub width_bps: u16,
+    pub bump: u8,
+}
 
 pub const PREMIUM_MIN: u64 = 100_000;
 pub const PREMIUM_MAX: u64 = 39_000_000;

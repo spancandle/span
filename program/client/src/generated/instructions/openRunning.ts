@@ -48,6 +48,7 @@ import {
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
 import {
+  findBandPda,
   findConfigPda,
   findTicketPda,
   findUntilPda,
@@ -79,6 +80,7 @@ export type OpenRunningInstruction<
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TAccountUntil extends string | AccountMeta<string> = string,
+  TAccountBand extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -117,6 +119,9 @@ export type OpenRunningInstruction<
       TAccountUntil extends string
         ? WritableAccount<TAccountUntil>
         : TAccountUntil,
+      TAccountBand extends string
+        ? WritableAccount<TAccountBand>
+        : TAccountBand,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -133,6 +138,7 @@ export type OpenRunningInstructionData = {
   premium: bigint;
   strikeBps: number;
   until: bigint;
+  bandBps: number;
 };
 
 export type OpenRunningInstructionDataArgs = {
@@ -140,6 +146,7 @@ export type OpenRunningInstructionDataArgs = {
   premium: number | bigint;
   strikeBps: number;
   until: number | bigint;
+  bandBps: number;
 };
 
 export function getOpenRunningInstructionDataEncoder(): FixedSizeEncoder<OpenRunningInstructionDataArgs> {
@@ -150,6 +157,7 @@ export function getOpenRunningInstructionDataEncoder(): FixedSizeEncoder<OpenRun
       ["premium", getU64Encoder()],
       ["strikeBps", getU16Encoder()],
       ["until", getI64Encoder()],
+      ["bandBps", getU16Encoder()],
     ]),
     (value) => ({ ...value, discriminator: OPEN_RUNNING_DISCRIMINATOR }),
   );
@@ -162,6 +170,7 @@ export function getOpenRunningInstructionDataDecoder(): FixedSizeDecoder<OpenRun
     ["premium", getU64Decoder()],
     ["strikeBps", getU16Decoder()],
     ["until", getI64Decoder()],
+    ["bandBps", getU16Decoder()],
   ]);
 }
 
@@ -189,6 +198,7 @@ export type OpenRunningAsyncInput<
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountUntil extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -203,12 +213,14 @@ export type OpenRunningAsyncInput<
   tokenProgram?: TAccountTokenProgram;
   systemProgram?: TAccountSystemProgram;
   until?: TAccountUntil;
+  band?: TAccountBand;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   id: OpenRunningInstructionDataArgs["id"];
   premium: OpenRunningInstructionDataArgs["premium"];
   strikeBps: OpenRunningInstructionDataArgs["strikeBps"];
   untilArg: OpenRunningInstructionDataArgs["until"];
+  bandBps: OpenRunningInstructionDataArgs["bandBps"];
 };
 
 export async function getOpenRunningInstructionAsync<
@@ -222,6 +234,7 @@ export async function getOpenRunningInstructionAsync<
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountUntil extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
@@ -237,6 +250,7 @@ export async function getOpenRunningInstructionAsync<
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountUntil,
+    TAccountBand,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -285,6 +299,10 @@ export async function getOpenRunningInstructionAsync<
       InstructionAccountInputAddress<TAccountUntil>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -328,6 +346,7 @@ export async function getOpenRunningInstructionAsync<
       isWritable: false,
     },
     until: { value: input.until ?? null, isSigner: false, isWritable: true },
+    band: { value: input.band ?? null, isSigner: false, isWritable: true },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -387,6 +406,17 @@ export async function getOpenRunningInstructionAsync<
       { programAddress },
     );
   }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
 
   return Object.freeze({
     accounts: [
@@ -400,6 +430,7 @@ export async function getOpenRunningInstructionAsync<
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
       getAccountMeta("until", accounts.until),
+      getAccountMeta("band", accounts.band),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -450,6 +481,10 @@ export async function getOpenRunningInstructionAsync<
       InstructionAccountInputAddress<TAccountUntil>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -474,6 +509,7 @@ export type OpenRunningInput<
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountUntil extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -488,12 +524,14 @@ export type OpenRunningInput<
   tokenProgram?: TAccountTokenProgram;
   systemProgram?: TAccountSystemProgram;
   until: TAccountUntil;
+  band: TAccountBand;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   id: OpenRunningInstructionDataArgs["id"];
   premium: OpenRunningInstructionDataArgs["premium"];
   strikeBps: OpenRunningInstructionDataArgs["strikeBps"];
   untilArg: OpenRunningInstructionDataArgs["until"];
+  bandBps: OpenRunningInstructionDataArgs["bandBps"];
 };
 
 export function getOpenRunningInstruction<
@@ -507,6 +545,7 @@ export function getOpenRunningInstruction<
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountUntil extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
@@ -522,6 +561,7 @@ export function getOpenRunningInstruction<
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountUntil,
+    TAccountBand,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -569,6 +609,10 @@ export function getOpenRunningInstruction<
     InstructionAccountInputAddress<TAccountUntil>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
     InstructionAccountInputAddress<TAccountEventAuthority>
   >,
@@ -611,6 +655,7 @@ export function getOpenRunningInstruction<
       isWritable: false,
     },
     until: { value: input.until ?? null, isSigner: false, isWritable: true },
+    band: { value: input.band ?? null, isSigner: false, isWritable: true },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -652,6 +697,7 @@ export function getOpenRunningInstruction<
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
       getAccountMeta("until", accounts.until),
+      getAccountMeta("band", accounts.band),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -702,6 +748,10 @@ export function getOpenRunningInstruction<
       InstructionAccountInputAddress<TAccountUntil>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -728,8 +778,9 @@ export type ParsedOpenRunningInstruction<
     tokenProgram: TAccountMetas[7];
     systemProgram: TAccountMetas[8];
     until: TAccountMetas[9];
-    eventAuthority: TAccountMetas[10];
-    program: TAccountMetas[11];
+    band: TAccountMetas[10];
+    eventAuthority: TAccountMetas[11];
+    program: TAccountMetas[12];
   };
   data: OpenRunningInstructionData;
 };
@@ -742,12 +793,12 @@ export function parseOpenRunningInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedOpenRunningInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 12) {
+  if (instruction.accounts.length < 13) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 12,
+        expectedAccountMetas: 13,
       },
     );
   }
@@ -770,6 +821,7 @@ export function parseOpenRunningInstruction<
       tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
       until: getNextAccount(),
+      band: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

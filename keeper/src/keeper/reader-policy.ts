@@ -19,7 +19,7 @@ export function pacedReserve(loaded: bigint, burn: bigint, duration: bigint, ela
 
 /** A send-time prediction: the oracle and paid/free classification can change before landing. */
 export function readerMarkAccepts(
-  policy: ReaderOptions["policy"], c: Candle, t: Ticket, price: bigint,
+  policy: ReaderOptions["policy"], c: Candle, t: Ticket & {bandBps:number}, price: bigint,
   now: bigint, balance: bigint, burn: bigint,
 ) {
   const mark = markAccepts(c, t, price);

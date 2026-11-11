@@ -41,6 +41,7 @@ import {
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
 import {
+  findBandPda,
   findBidSpanPda,
   findBidUsdcPda,
   findConfigPda,
@@ -81,6 +82,7 @@ export type AcceptBidInstruction<
   TAccountBidSpan extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountBand extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -148,6 +150,9 @@ export type AcceptBidInstruction<
       TAccountProgram extends string
         ? ReadonlyAccount<TAccountProgram>
         : TAccountProgram,
+      TAccountBand extends string
+        ? ReadonlyAccount<TAccountBand>
+        : TAccountBand,
       ...TRemainingAccounts,
     ]
   >;
@@ -205,6 +210,7 @@ export type AcceptBidAsyncInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   holder: TAccountHolder;
   config?: TAccountConfig;
@@ -227,6 +233,7 @@ export type AcceptBidAsyncInput<
   bidSpan?: TAccountBidSpan;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band?: TAccountBand;
 };
 
 export async function getAcceptBidInstructionAsync<
@@ -251,6 +258,7 @@ export async function getAcceptBidInstructionAsync<
   TAccountBidSpan extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: AcceptBidAsyncInput<
@@ -274,7 +282,8 @@ export async function getAcceptBidInstructionAsync<
     TAccountHolderSpan,
     TAccountBidSpan,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -363,6 +372,10 @@ export async function getAcceptBidInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >
 > {
@@ -447,6 +460,7 @@ export async function getAcceptBidInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -498,6 +512,17 @@ export async function getAcceptBidInstructionAsync<
       { programAddress },
     );
   }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
 
   return Object.freeze({
     accounts: [
@@ -522,6 +547,7 @@ export async function getAcceptBidInstructionAsync<
       getAccountMeta("bidSpan", accounts.bidSpan),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getAcceptBidInstructionDataEncoder().encode({}),
     programAddress,
@@ -610,6 +636,10 @@ export async function getAcceptBidInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -640,6 +670,7 @@ export type AcceptBidInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   holder: TAccountHolder;
   config: TAccountConfig;
@@ -662,6 +693,7 @@ export type AcceptBidInput<
   bidSpan?: TAccountBidSpan;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band: TAccountBand;
 };
 
 export function getAcceptBidInstruction<
@@ -686,6 +718,7 @@ export function getAcceptBidInstruction<
   TAccountBidSpan extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: AcceptBidInput<
@@ -709,7 +742,8 @@ export function getAcceptBidInstruction<
     TAccountHolderSpan,
     TAccountBidSpan,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): AcceptBidInstruction<
@@ -797,6 +831,10 @@ export function getAcceptBidInstruction<
   ResolvedInstructionAccountMeta<
     TAccountProgram,
     InstructionAccountInputAddress<TAccountProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
   >
 > {
   // Program address.
@@ -880,6 +918,7 @@ export function getAcceptBidInstruction<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -919,6 +958,7 @@ export function getAcceptBidInstruction<
       getAccountMeta("bidSpan", accounts.bidSpan),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getAcceptBidInstructionDataEncoder().encode({}),
     programAddress,
@@ -1007,6 +1047,10 @@ export function getAcceptBidInstruction<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -1038,6 +1082,7 @@ export type ParsedAcceptBidInstruction<
     bidSpan?: TAccountMetas[18] | undefined;
     eventAuthority: TAccountMetas[19];
     program: TAccountMetas[20];
+    band: TAccountMetas[21];
   };
   data: AcceptBidInstructionData;
 };
@@ -1050,12 +1095,12 @@ export function parseAcceptBidInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAcceptBidInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 21) {
+  if (instruction.accounts.length < 22) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 21,
+        expectedAccountMetas: 22,
       },
     );
   }
@@ -1095,6 +1140,7 @@ export function parseAcceptBidInstruction<
       bidSpan: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
+      band: getNextAccount(),
     },
     data: getAcceptBidInstructionDataDecoder().decode(instruction.data),
   };

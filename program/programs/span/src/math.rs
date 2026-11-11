@@ -1,12 +1,13 @@
-use crate::{error::SpanError, state::VAULT_CAP};
+use crate::{error::SpanError, state::{VAULT_CAP, BANDS, BAND_DEFAULT}};
 use anchor_lang::prelude::*;
 
 pub fn add_time(a: i64, b: i64) -> Result<i64> {
     a.checked_add(b).ok_or_else(|| error!(SpanError::Overflow))
 }
 
-pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16) -> Result<u64> {
+pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16, band_bps: u16) -> Result<u64> {
     require!(p0 > 0 && high >= low, SpanError::InvalidValue);
+    require!(BANDS.contains(&band_bps), SpanError::InvalidBand);
     let width = u128::from(high.checked_sub(low).ok_or(SpanError::Overflow)?);
     let numerator = width
         .checked_mul(1_000_000_000)
@@ -15,7 +16,8 @@ pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16) -> Result<u64> {
         .checked_div(u128::from(p0))
         .ok_or(SpanError::Overflow)?;
     let strike = u128::from(strike_bps).checked_mul(100_000).ok_or(SpanError::Overflow)?;
-    Ok(raw.saturating_sub(strike).min(u128::from(VAULT_CAP)) as u64)
+    let net = raw.saturating_sub(strike);
+    Ok(net.checked_mul(u128::from(BAND_DEFAULT / band_bps)).ok_or(SpanError::Overflow)?.min(u128::from(VAULT_CAP)) as u64)
 }
 
 pub fn extends(price: u64, high: u64, low: u64, p0: u64, step: u16) -> Result<Option<bool>> {

@@ -806,6 +806,61 @@
       ]
     },
     {
+      "name": "close_band",
+      "discriminator": [
+        128,
+        213,
+        13,
+        217,
+        209,
+        224,
+        32,
+        209
+      ],
+      "accounts": [
+        {
+          "name": "band",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "band.ticket",
+                "account": "Band"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "ticket"
+        },
+        {
+          "name": "closer",
+          "signer": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "close_bid",
       "discriminator": [
         169,
@@ -2664,6 +2719,27 @@
           }
         },
         {
+          "name": "band",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2686,6 +2762,10 @@
         {
           "name": "until",
           "type": "i64"
+        },
+        {
+          "name": "band_bps",
+          "type": "u16"
         }
       ]
     },
@@ -2815,6 +2895,27 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "band",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "ticket"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2832,6 +2933,10 @@
         },
         {
           "name": "strike_bps",
+          "type": "u16"
+        },
+        {
+          "name": "band_bps",
           "type": "u16"
         }
       ]
@@ -3886,6 +3991,19 @@
   ],
   "accounts": [
     {
+      "name": "Band",
+      "discriminator": [
+        187,
+        233,
+        241,
+        76,
+        86,
+        127,
+        89,
+        203
+      ]
+    },
+    {
       "name": "Bid",
       "discriminator": [
         143,
@@ -3978,6 +4096,32 @@
     }
   ],
   "events": [
+    {
+      "name": "BandClosed",
+      "discriminator": [
+        101,
+        66,
+        243,
+        77,
+        71,
+        67,
+        12,
+        67
+      ]
+    },
+    {
+      "name": "BandSet",
+      "discriminator": [
+        50,
+        51,
+        17,
+        112,
+        147,
+        58,
+        8,
+        84
+      ]
+    },
     {
       "name": "BidAccepted",
       "discriminator": [
@@ -4534,9 +4678,89 @@
     {
       "code": 6050,
       "name": "NotRequester"
+    },
+    {
+      "code": 6051,
+      "name": "InvalidBand"
+    },
+    {
+      "code": 6052,
+      "name": "BandMissing"
+    },
+    {
+      "code": 6053,
+      "name": "BandMismatch"
+    },
+    {
+      "code": 6054,
+      "name": "TicketLive"
     }
   ],
   "types": [
+    {
+      "name": "Band",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "width_bps",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BandClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "band",
+            "type": "pubkey"
+          },
+          {
+            "name": "closer",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BandSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "width_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
     {
       "name": "Bid",
       "type": {

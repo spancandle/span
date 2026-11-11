@@ -8,7 +8,7 @@ it('accepts the length/premium boundaries and deposits the forty-USDC remainder'
 });
 it('computes floor then strike then cap, including the February replay',async()=>{
  const c={t0:1200n,readWindow:20,ageLimit:20,reads:[{price:p0,publishTs:1200n}],readHigh:p0,readLow:p0};
- for(const [k,h,want]of [[0,10100000000n,10000000n],[200,10100000000n,0n],[200,10300000000n,10000000n],[200,10600000000n,40000000n]]as const)expect(payout({...c,readHigh:h},{strikeBps:k,tailHigh:0n,tailLow:0n,stepBps:5})).toBe(want);
+ for(const [k,h,want]of [[0,10100000000n,10000000n],[200,10100000000n,0n],[200,10300000000n,10000000n],[200,10600000000n,40000000n]]as const)expect(payout({...c,readHigh:h},{strikeBps:k,bandBps:400,tailHigh:0n,tailLow:0n,stepBps:5})).toBe(want);
  const h=await Harness.create({setSpan:true}),t=await h.open({sold:true,strikeBps:200});h.clock(t.t0);h.price(8245717232n,t.t0);await h.send('length_open_read',h.readIx(t,0));h.clock(t.t0+300n);h.price(8374074305n,t.t0+300n);await h.send('length_high_read',h.readIx(t,1));h.clock(t.t0+600n);h.price(8184020762n,t.t0+600n);await h.send('length_low_read',h.readIx(t,2));h.clock(t.t0+3641n);await h.send('length_replay_settle',h.settleIx(t));expect(h.events.find(e=>e.name==='Settled')!.data).toMatchObject({strikeBps:200,payout:3048758n,toBuyer:3048758n,toSeller:36951242n});
 });
 it('keeps unpaid tails, burns payout increases, and fences retries and capped tickets',async()=>{

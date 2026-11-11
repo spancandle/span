@@ -64,6 +64,15 @@ export class Chain {
   configKey!: Address;
   candles = new Map<Address, Live<s.Candle>>();
   tickets = new Map<Address, Live<s.Ticket>>();
+  bands = new Map<Address, Live<s.Band>>();
+  private bandTickets = new Set<Address>();
+  private bandSlot = -1;
+  private bandRead = 0;
+  /** Absence is meaningful only in a successful shared ticket/Band snapshot. */
+  bandBps(ticket: Address): number | undefined {
+    if (!this.bandTickets.has(ticket)) return undefined;
+    return [...this.bands.values()].find(x => x.value.ticket === ticket)?.value.widthBps ?? s.BAND_DEFAULT;
+  }
   untils = new Map<Address, Live<s.Until>>();
   resales = new Map<Address, Live<s.Resale>>();
   bids = new Map<Address, Live<s.Bid>>();
@@ -204,21 +213,48 @@ export class Chain {
     void this.syncFeeds().catch(()=>this.logger({event:'feed-subscription-error'}));this.onChange();
   }
   async pollPrograms() {
+    const bandRead = ++this.bandRead;
     await Promise.all(
       (["candle", "ticket", "until", "resale", "bid", "request"] as const).map(async (kind) => {
-        const v = await this.rpc.call("getProgramAccounts", [
+        let v;
+        try { v = await this.rpc.call("getProgramAccounts", [
           s.SPAN_PROGRAM_ADDRESS,
           {
             encoding: "base64",
             commitment: "processed",
             withContext: true,
-            filters: filter(
+            filters: kind === "ticket" ? [] : filter(
               kind === "candle"
                 ? s.CANDLE_DISCRIMINATOR
-                : kind === "ticket" ? s.TICKET_DISCRIMINATOR : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : kind === "bid" ? s.BID_DISCRIMINATOR : s.REQUEST_DISCRIMINATOR,
+                : kind === "until" ? s.UNTIL_DISCRIMINATOR : kind === "resale" ? s.RESALE_DISCRIMINATOR : kind === "bid" ? s.BID_DISCRIMINATOR : s.REQUEST_DISCRIMINATOR,
             ),
           },
         ]);
+        if (kind === "ticket") {
+          if (!Number.isSafeInteger(v?.context?.slot) || !Array.isArray(v.value)) throw Error("Invalid account snapshot");
+          const bands = new Map<Address, Live<s.Band>>();
+          for (const x of v.value) {
+            const d = bytes(x.account);
+            if (!s.BAND_DISCRIMINATOR.every((b, i) => d[i] === b)) continue;
+            const value = s.getBandDecoder().decode(d), key = address(x.pubkey);
+            if (x.account.owner !== s.SPAN_PROGRAM_ADDRESS || d.length !== 75 ||
+                !s.BANDS.includes(value.widthBps as 100 | 200 | 400) ||
+                (await s.findBandPda(value.ticket))[0] !== key) throw Error("Invalid Band account");
+            bands.set(key, {value,slot:v.context.slot,data:x.account.data[0]});
+          }
+          if (v.context.slot >= this.bandSlot && bandRead === this.bandRead) {
+            this.bands = bands;
+            this.bandSlot = v.context.slot;
+            this.bandTickets = new Set(v.value.filter((x: any) =>
+              x.account.owner === s.SPAN_PROGRAM_ADDRESS && bytes(x.account).length === 173 &&
+              s.TICKET_DISCRIMINATOR.every((b,i)=>bytes(x.account)[i]===b)).map((x:any)=>address(x.pubkey)));
+            this.onChange();
+          }
+        }
+        } catch (error) {
+          // A width never changes after opening, so a failed read keeps what an earlier snapshot established.
+          throw error;
+        }
         const seen = new Set(v.value.map((x: any) => x.pubkey));
         for (const x of v.value)
           this.ingest(kind, address(x.pubkey), x.account, v.context.slot);
@@ -437,7 +473,7 @@ export async function settlement(
   payer: TransactionSigner,
   config: s.Config,
   candle: s.Candle,
-  ticket: s.Ticket,
+  ticket: s.Ticket & { bandBps: number },
   ticketAddress: Address,
 ) {
   const buyer = unwrapOption(ticket.buyer),

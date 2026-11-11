@@ -42,7 +42,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
-import { findConfigPda, findResalePda } from "../pdas/index.js";
+import { findBandPda, findConfigPda, findResalePda } from "../pdas/index.js";
 import { SPAN_PROGRAM_ADDRESS } from "../programs/index.js";
 
 export const BUY_RESALE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -73,6 +73,7 @@ export type BuyResaleInstruction<
   TAccountSpanTokenProgram extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountBand extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -130,6 +131,9 @@ export type BuyResaleInstruction<
       TAccountProgram extends string
         ? ReadonlyAccount<TAccountProgram>
         : TAccountProgram,
+      TAccountBand extends string
+        ? ReadonlyAccount<TAccountBand>
+        : TAccountBand,
       ...TRemainingAccounts,
     ]
   >;
@@ -189,6 +193,7 @@ export type BuyResaleAsyncInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   config?: TAccountConfig;
   candle: TAccountCandle;
@@ -207,6 +212,7 @@ export type BuyResaleAsyncInput<
   spanTokenProgram?: TAccountSpanTokenProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band?: TAccountBand;
   maxPay: BuyResaleInstructionDataArgs["maxPay"];
 };
 
@@ -228,6 +234,7 @@ export async function getBuyResaleInstructionAsync<
   TAccountSpanTokenProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: BuyResaleAsyncInput<
@@ -247,7 +254,8 @@ export async function getBuyResaleInstructionAsync<
     TAccountHolderSpan,
     TAccountSpanTokenProgram,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -320,6 +328,10 @@ export async function getBuyResaleInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >
 > {
@@ -388,6 +400,7 @@ export async function getBuyResaleInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -416,6 +429,17 @@ export async function getBuyResaleInstructionAsync<
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
 
   return Object.freeze({
     accounts: [
@@ -436,6 +460,7 @@ export async function getBuyResaleInstructionAsync<
       getAccountMeta("spanTokenProgram", accounts.spanTokenProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getBuyResaleInstructionDataEncoder().encode(
       args as BuyResaleInstructionDataArgs,
@@ -510,6 +535,10 @@ export async function getBuyResaleInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -535,6 +564,7 @@ export type BuyResaleInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   config: TAccountConfig;
   candle: TAccountCandle;
@@ -553,6 +583,7 @@ export type BuyResaleInput<
   spanTokenProgram?: TAccountSpanTokenProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band: TAccountBand;
   maxPay: BuyResaleInstructionDataArgs["maxPay"];
 };
 
@@ -574,6 +605,7 @@ export function getBuyResaleInstruction<
   TAccountSpanTokenProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: BuyResaleInput<
@@ -593,7 +625,8 @@ export function getBuyResaleInstruction<
     TAccountHolderSpan,
     TAccountSpanTokenProgram,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): BuyResaleInstruction<
@@ -665,6 +698,10 @@ export function getBuyResaleInstruction<
   ResolvedInstructionAccountMeta<
     TAccountProgram,
     InstructionAccountInputAddress<TAccountProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
   >
 > {
   // Program address.
@@ -732,6 +769,7 @@ export function getBuyResaleInstruction<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -766,6 +804,7 @@ export function getBuyResaleInstruction<
       getAccountMeta("spanTokenProgram", accounts.spanTokenProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getBuyResaleInstructionDataEncoder().encode(
       args as BuyResaleInstructionDataArgs,
@@ -840,6 +879,10 @@ export function getBuyResaleInstruction<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -867,6 +910,7 @@ export type ParsedBuyResaleInstruction<
     spanTokenProgram?: TAccountMetas[14] | undefined;
     eventAuthority: TAccountMetas[15];
     program: TAccountMetas[16];
+    band: TAccountMetas[17];
   };
   data: BuyResaleInstructionData;
 };
@@ -879,12 +923,12 @@ export function parseBuyResaleInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedBuyResaleInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 18) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 17,
+        expectedAccountMetas: 18,
       },
     );
   }
@@ -920,6 +964,7 @@ export function parseBuyResaleInstruction<
       spanTokenProgram: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
+      band: getNextAccount(),
     },
     data: getBuyResaleInstructionDataDecoder().decode(instruction.data),
   };

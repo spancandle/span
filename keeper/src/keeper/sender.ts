@@ -19,9 +19,13 @@ import { log, type Logger } from "../common/log.js";
 import type { FeedValue } from "../common/feed.js";
 export const CLOSE_BID_UNITS = 49734;
 export const CLOSE_REQUEST_UNITS = 48798;
+export const MARK_UNITS = 50409;
+export const SETTLE_UNITS = 66354;
+export const SETTLE_CREATE_UNITS = 165991;
+export const CLOSE_BAND_UNITS = 18164;
 export type Action = {
   key: string;
-  kind: "open" | "read" | "mark" | "settle" | "closeUntil" | "closeResale" | "closeBid" | "closeRequest";
+  kind: "open" | "read" | "mark" | "settle" | "closeUntil" | "closeResale" | "closeBid" | "closeRequest" | "closeBand";
   t0: bigint;
   j?: number;
   ticket?: string;
@@ -29,6 +33,7 @@ export type Action = {
   resale?: string;
   bid?: string;
   request?: string;
+  band?: string;
   end?: bigint;
 };
 export type Prepared = {
@@ -75,6 +80,7 @@ export async function prepareTransaction(
   const limit =
     action.kind === "closeBid" ? CLOSE_BID_UNITS :
     action.kind === "closeRequest" ? CLOSE_REQUEST_UNITS :
+    action.kind === "closeBand" ? CLOSE_BAND_UNITS :
     (action.kind === "closeUntil" || action.kind === "closeResale")
       ? 20000
       : action.kind === "open"
@@ -82,10 +88,10 @@ export async function prepareTransaction(
       : action.kind === "read"
       ? 40000
       : action.kind === "mark"
-        ? 60000
+        ? MARK_UNITS
         : rent > 0n
-          ? 250000
-          : 80000;
+          ? SETTLE_CREATE_UNITS
+          : SETTLE_UNITS;
   const a = Buffer.alloc(5),
     b = Buffer.alloc(9);
   a[0] = 2;
@@ -232,7 +238,7 @@ export class Sender {
             maxRetries: 0,
           },
         ],
-        f.p.action.kind === "settle" || f.p.action.kind === "closeUntil" || (f.p.action.kind === "closeResale" || f.p.action.kind === "closeBid" || f.p.action.kind === "closeRequest") ? "normal" : "window",
+        f.p.action.kind === "settle" || f.p.action.kind === "closeUntil" || f.p.action.kind === "closeBand" || (f.p.action.kind === "closeResale" || f.p.action.kind === "closeBid" || f.p.action.kind === "closeRequest") ? "normal" : "window",
         undefined,
         undefined,
         () => {

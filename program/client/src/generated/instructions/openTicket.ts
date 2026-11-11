@@ -45,7 +45,12 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
-import { findConfigPda, findTicketPda, findVaultPda } from "../pdas/index.js";
+import {
+  findBandPda,
+  findConfigPda,
+  findTicketPda,
+  findVaultPda,
+} from "../pdas/index.js";
 import { SPAN_PROGRAM_ADDRESS } from "../programs/index.js";
 
 export const OPEN_TICKET_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -69,6 +74,7 @@ export type OpenTicketInstruction<
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
+  TAccountBand extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -104,6 +110,9 @@ export type OpenTicketInstruction<
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
+      TAccountBand extends string
+        ? WritableAccount<TAccountBand>
+        : TAccountBand,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -119,12 +128,14 @@ export type OpenTicketInstructionData = {
   id: bigint;
   premium: bigint;
   strikeBps: number;
+  bandBps: number;
 };
 
 export type OpenTicketInstructionDataArgs = {
   id: number | bigint;
   premium: number | bigint;
   strikeBps: number;
+  bandBps: number;
 };
 
 export function getOpenTicketInstructionDataEncoder(): FixedSizeEncoder<OpenTicketInstructionDataArgs> {
@@ -134,6 +145,7 @@ export function getOpenTicketInstructionDataEncoder(): FixedSizeEncoder<OpenTick
       ["id", getU64Encoder()],
       ["premium", getU64Encoder()],
       ["strikeBps", getU16Encoder()],
+      ["bandBps", getU16Encoder()],
     ]),
     (value) => ({ ...value, discriminator: OPEN_TICKET_DISCRIMINATOR }),
   );
@@ -145,6 +157,7 @@ export function getOpenTicketInstructionDataDecoder(): FixedSizeDecoder<OpenTick
     ["id", getU64Decoder()],
     ["premium", getU64Decoder()],
     ["strikeBps", getU16Decoder()],
+    ["bandBps", getU16Decoder()],
   ]);
 }
 
@@ -171,6 +184,7 @@ export type OpenTicketAsyncInput<
     InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -184,11 +198,13 @@ export type OpenTicketAsyncInput<
   sellerSource: TAccountSellerSource;
   tokenProgram?: TAccountTokenProgram;
   systemProgram?: TAccountSystemProgram;
+  band?: TAccountBand;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   id: OpenTicketInstructionDataArgs["id"];
   premium: OpenTicketInstructionDataArgs["premium"];
   strikeBps: OpenTicketInstructionDataArgs["strikeBps"];
+  bandBps: OpenTicketInstructionDataArgs["bandBps"];
 };
 
 export async function getOpenTicketInstructionAsync<
@@ -201,6 +217,7 @@ export async function getOpenTicketInstructionAsync<
   TAccountSellerSource extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
@@ -215,6 +232,7 @@ export async function getOpenTicketInstructionAsync<
     TAccountSellerSource,
     TAccountTokenProgram,
     TAccountSystemProgram,
+    TAccountBand,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -259,6 +277,10 @@ export async function getOpenTicketInstructionAsync<
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -301,6 +323,7 @@ export async function getOpenTicketInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: true },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -349,6 +372,17 @@ export async function getOpenTicketInstructionAsync<
     accounts.systemProgram.value =
       "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
 
   return Object.freeze({
     accounts: [
@@ -361,6 +395,7 @@ export async function getOpenTicketInstructionAsync<
       getAccountMeta("sellerSource", accounts.sellerSource),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
+      getAccountMeta("band", accounts.band),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -407,6 +442,10 @@ export async function getOpenTicketInstructionAsync<
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -430,6 +469,7 @@ export type OpenTicketInput<
     InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -443,11 +483,13 @@ export type OpenTicketInput<
   sellerSource: TAccountSellerSource;
   tokenProgram?: TAccountTokenProgram;
   systemProgram?: TAccountSystemProgram;
+  band: TAccountBand;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   id: OpenTicketInstructionDataArgs["id"];
   premium: OpenTicketInstructionDataArgs["premium"];
   strikeBps: OpenTicketInstructionDataArgs["strikeBps"];
+  bandBps: OpenTicketInstructionDataArgs["bandBps"];
 };
 
 export function getOpenTicketInstruction<
@@ -460,6 +502,7 @@ export function getOpenTicketInstruction<
   TAccountSellerSource extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
@@ -474,6 +517,7 @@ export function getOpenTicketInstruction<
     TAccountSellerSource,
     TAccountTokenProgram,
     TAccountSystemProgram,
+    TAccountBand,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -517,6 +561,10 @@ export function getOpenTicketInstruction<
     InstructionAccountInputAddress<TAccountSystemProgram>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
     InstructionAccountInputAddress<TAccountEventAuthority>
   >,
@@ -558,6 +606,7 @@ export function getOpenTicketInstruction<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: true },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -598,6 +647,7 @@ export function getOpenTicketInstruction<
       getAccountMeta("sellerSource", accounts.sellerSource),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
+      getAccountMeta("band", accounts.band),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -644,6 +694,10 @@ export function getOpenTicketInstruction<
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -669,8 +723,9 @@ export type ParsedOpenTicketInstruction<
     sellerSource: TAccountMetas[6];
     tokenProgram: TAccountMetas[7];
     systemProgram: TAccountMetas[8];
-    eventAuthority: TAccountMetas[9];
-    program: TAccountMetas[10];
+    band: TAccountMetas[9];
+    eventAuthority: TAccountMetas[10];
+    program: TAccountMetas[11];
   };
   data: OpenTicketInstructionData;
 };
@@ -683,12 +738,12 @@ export function parseOpenTicketInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedOpenTicketInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 12) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 11,
+        expectedAccountMetas: 12,
       },
     );
   }
@@ -710,6 +765,7 @@ export function parseOpenTicketInstruction<
       sellerSource: getNextAccount(),
       tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
+      band: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

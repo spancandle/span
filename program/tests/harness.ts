@@ -47,6 +47,7 @@ import {
   findTicketPda,
   findVaultPda,
   findSpanHoldPda,
+  findBandPda,
   findEventAuthorityPda,
 } from "../client/pdas.js";
 export { r, TOKEN, TOKEN_2022, SOL_FEED, BTC_FEED, USDC, DOVES };
@@ -73,6 +74,7 @@ export type Ref = {
   ticket: Address;
   vault: Address;
   spanHold: Address;
+  band: Address;
 };
 export const measurements: Record<string, string[]> = {};
 export const sizes: Record<string, number> = {};
@@ -96,6 +98,7 @@ export class Harness {
   buyerSpan!: Address;
   events: ReturnType<typeof decodeEvents> = [];
   lastFee = 0n;
+  private bandKeys = new Map<Address, Address>();
   createSigner = generateKeyPairSigner;
   static async create(
     o: {
@@ -229,6 +232,8 @@ export class Harness {
     ];
     if (!fn) throw Error(`Unknown ${name}`);
     return fn({
+      bandBps: 400,
+      band: this.bandKeys.get(overrides.ticket),
       config: this.config,
       usdcMint: USDC,
       feed: name === "read" || name === "mark" ? this.feed : SOL_FEED,
@@ -250,13 +255,17 @@ export class Harness {
     return r.getCandleDecoder().decode(accountData(this.svm, t.candle));
   }
   ticketState(t: Ref) {
-    return r.getTicketDecoder().decode(accountData(this.svm, t.ticket));
+    const band = this.bandKeys.get(t.ticket), raw = band ? this.svm.getAccount(band) : null;
+    return { ...r.getTicketDecoder().decode(accountData(this.svm, t.ticket)), bandBps: raw?.exists && raw.data.length ? r.getBandDecoder().decode(raw.data).widthBps : 400 };
   }
   async ref(t0 = 1200n + BigInt(this.asset), id = this.configState().nextTicketId): Promise<Ref> {
     const ticket = (await findTicketPda(id))[0];
+    const band = (await findBandPda(ticket))[0];
+    this.bandKeys.set(ticket, band);
     return {
       id,
       t0,
+      band,
       candle: (await findCandlePda(t0))[0],
       ticket,
       vault: (await findVaultPda(ticket))[0],
@@ -327,12 +336,13 @@ export class Harness {
       premium?: bigint;
       strikeBps?: number;
       step?: number;
+      bandBps?: number;
     } = {},
   ) {
     const t = await this.ref(o.t0);
     await this.send(
       "open",
-      [this.openCandleIx(t), this.openIx(t, o.premium, {strikeBps: o.strikeBps ?? 0})],
+      [this.openCandleIx(t), this.openIx(t, o.premium, {strikeBps: o.strikeBps ?? 0, bandBps: o.bandBps ?? 400})],
       this.seller,
     );
     if (o.sold || o.loaded)

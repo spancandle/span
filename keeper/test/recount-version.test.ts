@@ -25,6 +25,7 @@ it("a creation reserved while a finalized recount is in flight stays reserved, s
         id,
         t0,
         state: TicketState.Open,
+        bandBps:400,
         marks: 0,
         spanLoaded: 0n,
         burned: 0n,

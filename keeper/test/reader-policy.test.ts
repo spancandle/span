@@ -17,8 +17,8 @@ it("initial-load reserve equals spent < allowance in all 378140 original states"
 
 const candle = (t0 = 1200n) => ({ t0, reads: [{ price: 10000000000n }],
   readHigh: 10000000000n, readLow: 10000000000n } as Candle);
-const ticket = (more = {}) => ({ spanLoaded: 500n, burned: 0n, strikeBps: 100, stepBps: 5,
-  tailHigh: 0n, tailLow: 0n, ...more } as Ticket);
+const ticket = (more = {}) => ({ bandBps:400, spanLoaded: 500n, burned: 0n, strikeBps: 100, stepBps: 5,
+  tailHigh: 0n, tailLow: 0n, ...more } as Ticket & {bandBps:number});
 it("uses exact BigInt arithmetic, duration boundaries, zero initial whole units and remainders", () => {
   const n = (1n << 100n) + 17n;
   for (const d of [1800n, 3600n]) {

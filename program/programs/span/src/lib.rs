@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{token, token_interface};
 
+pub mod band;
 pub mod contexts;
 pub mod error;
 pub mod events;
@@ -203,6 +204,7 @@ pub mod span {
     }
 
     pub fn buy_resale(ctx: Context<BuyResale>, max_pay: u64) -> Result<()> {
+        let band_bps = band::required_band(ctx.program_id, &ctx.accounts.ticket.key(), ctx.remaining_accounts)?;
         let t = &ctx.accounts.ticket;
         let c = &ctx.accounts.candle;
         let offer = &ctx.accounts.resale;
@@ -227,7 +229,7 @@ pub mod span {
             require!(c.reads[k].price > 0 || price.publish_ts < boundary || price.publish_ts > math::add_time(boundary, i64::from(c.read_window))? || i128::from(clock.unix_timestamp) - i128::from(price.publish_ts) > i128::from(c.age_limit), SpanError::ReadPending);
         }
         let (high, low) = t.high_low(c);
-        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps)?;
+        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps, band_bps)?;
         require!(recorded < VAULT_CAP, SpanError::CapReached);
         let paid = recorded.checked_add(offer.ask).ok_or(SpanError::Overflow)?;
         require!(paid <= max_pay, SpanError::PriceAboveMax);
@@ -333,6 +335,7 @@ pub mod span {
     }
 
     pub fn accept_bid(ctx: Context<AcceptBid>) -> Result<()> {
+        let band_bps = band::required_band(ctx.program_id, &ctx.accounts.ticket.key(), ctx.remaining_accounts)?;
         let t = &ctx.accounts.ticket;
         let c = &ctx.accounts.candle;
         let bid = &ctx.accounts.bid;
@@ -357,7 +360,7 @@ pub mod span {
             require!(c.reads[k].price > 0 || price.publish_ts < boundary || price.publish_ts > math::add_time(boundary, i64::from(c.read_window))? || i128::from(clock.unix_timestamp) - i128::from(price.publish_ts) > i128::from(c.age_limit), SpanError::ReadPending);
         }
         let (high, low) = t.high_low(c);
-        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps)?;
+        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps, band_bps)?;
         require!(recorded < VAULT_CAP, SpanError::CapReached);
         let paid = recorded.checked_add(bid.ask).ok_or(SpanError::Overflow)?;
         require!(paid <= bid.cap, SpanError::PriceAboveMax);
@@ -544,6 +547,8 @@ pub mod span {
     }
 
     pub fn fill_request_held(ctx: Context<FillRequestHeld>) -> Result<()> {
+        let band_bps = band::required_band(ctx.program_id, &ctx.accounts.ticket.key(), ctx.remaining_accounts)?;
+        require!(band_bps == BAND_DEFAULT, SpanError::BandMismatch);
         let t = &ctx.accounts.ticket;
         let c = &ctx.accounts.candle;
         let request = &ctx.accounts.request;
@@ -569,7 +574,7 @@ pub mod span {
             require!(c.reads[k].price > 0 || price.publish_ts < boundary || price.publish_ts > math::add_time(boundary, i64::from(c.read_window))? || i128::from(clock.unix_timestamp) - i128::from(price.publish_ts) > i128::from(c.age_limit), SpanError::ReadPending);
         }
         let (high, low) = t.high_low(c);
-        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps)?;
+        let recorded = math::payout(c.reads[0].price, high, low, t.strike_bps, band_bps)?;
         require!(recorded < VAULT_CAP, SpanError::CapReached);
         let paid = recorded.checked_add(request.ask).ok_or(SpanError::Overflow)?;
         require!(paid <= request.cap, SpanError::PriceAboveMax);
@@ -755,7 +760,7 @@ pub mod span {
         require_keys_eq!(ctx.accounts.feed.key(), oracle::feed_of(ctx.accounts.config.feed, asset)?, SpanError::FeedNotConfig);
         let price = oracle::read(&ctx.accounts.feed.to_account_info(), clock.unix_timestamp, c.age_limit, asset)?;
         require!(price.publish_ts > c.t0 && price.publish_ts <= math::add_time(c.t0, math::window(c.t0)?.1)?, SpanError::OutsideCandle);
-        let recorded = math::payout(c.reads[0].price, c.read_high.max(price.price), c.read_low.min(price.price), request.strike_bps)?;
+        let recorded = math::payout(c.reads[0].price, c.read_high.max(price.price), c.read_low.min(price.price), request.strike_bps, BAND_DEFAULT)?;
         require!(recorded < VAULT_CAP, SpanError::CapReached);
         let paid = recorded.checked_add(request.ask).ok_or(SpanError::Overflow)?;
         require!(paid <= request.cap, SpanError::PriceAboveMax);
@@ -851,7 +856,9 @@ pub mod span {
         Ok(())
     }
 
-    pub fn open_running(ctx: Context<OpenRunning>, id: u64, premium: u64, strike_bps: u16, until: i64) -> Result<()> {
+    pub fn open_running(ctx: Context<OpenRunning>, id: u64, premium: u64, strike_bps: u16, until: i64, band_bps: u16) -> Result<()> {
+        band::create_band(ctx.accounts.band.to_account_info(), ctx.accounts.seller.to_account_info(),
+            ctx.accounts.system_program.key(), ctx.accounts.ticket.key(), band_bps, ctx.bumps.band)?;
         require!(
             (PREMIUM_MIN..=PREMIUM_MAX).contains(&premium)
                 && strike_bps <= STRIKE_MAX_BPS && strike_bps % STRIKE_STEP_BPS == 0,
@@ -911,10 +918,14 @@ pub mod span {
             deposit
         });
         emit_cpi!(UntilSet { ticket: t.key(), id, t0: t.t0, until });
+        if band_bps != BAND_DEFAULT {
+            emit_cpi!(BandSet { ticket: ctx.accounts.ticket.key(), id, width_bps: band_bps });
+        }
         Ok(())
     }
 
     pub fn buy_running(ctx: Context<BuyRunning>, max_pay: u64) -> Result<()> {
+        let band_bps = band::required_band(ctx.program_id, &ctx.accounts.ticket.key(), ctx.remaining_accounts)?;
         let c = &ctx.accounts.candle;
         let t = &ctx.accounts.ticket;
         require!(t.state == TicketState::Open, SpanError::NotOpen);
@@ -926,7 +937,7 @@ pub mod span {
         let price = oracle::read(&ctx.accounts.feed.to_account_info(), clock.unix_timestamp, c.age_limit, asset)?;
         require!(price.publish_ts > c.t0 && price.publish_ts <= math::add_time(c.t0, math::window(c.t0)?.1)?, SpanError::OutsideCandle);
         let (high, low) = t.high_low(c);
-        let recorded = math::payout(c.reads[0].price, high.max(price.price), low.min(price.price), t.strike_bps)?;
+        let recorded = math::payout(c.reads[0].price, high.max(price.price), low.min(price.price), t.strike_bps, band_bps)?;
         require!(recorded < VAULT_CAP, SpanError::CapReached);
         let paid = recorded.checked_add(t.premium).ok_or(SpanError::Overflow)?;
         require!(paid <= max_pay, SpanError::PriceAboveMax);
@@ -953,6 +964,12 @@ pub mod span {
         Ok(())
     }
 
+    pub fn close_band(ctx: Context<CloseBand>) -> Result<()> {
+        require!(ctx.accounts.ticket.data_is_empty(), SpanError::TicketLive);
+        emit_cpi!(BandClosed { ticket: ctx.accounts.band.ticket, band: ctx.accounts.band.key(), closer: ctx.accounts.closer.key() });
+        Ok(())
+    }
+
     pub fn close_until(ctx: Context<CloseUntil>) -> Result<()> {
         if ctx.accounts.ticket.owner == &crate::ID && !ctx.accounts.ticket.data_is_empty() {
             require_keys_eq!(ctx.accounts.closer.key(), ctx.accounts.until.seller, SpanError::NotSeller);
@@ -961,7 +978,9 @@ pub mod span {
         Ok(())
     }
 
-    pub fn open_ticket(ctx: Context<OpenTicket>, id: u64, premium: u64, strike_bps: u16) -> Result<()> {
+    pub fn open_ticket(ctx: Context<OpenTicket>, id: u64, premium: u64, strike_bps: u16, band_bps: u16) -> Result<()> {
+        band::create_band(ctx.accounts.band.to_account_info(), ctx.accounts.seller.to_account_info(),
+            ctx.accounts.system_program.key(), ctx.accounts.ticket.key(), band_bps, ctx.bumps.band)?;
         require!(
             (PREMIUM_MIN..=PREMIUM_MAX).contains(&premium)
                 && strike_bps <= STRIKE_MAX_BPS && strike_bps % STRIKE_STEP_BPS == 0,
@@ -1017,6 +1036,9 @@ pub mod span {
             strike_bps,
             deposit
         });
+        if band_bps != BAND_DEFAULT {
+            emit_cpi!(BandSet { ticket: ctx.accounts.ticket.key(), id, width_bps: band_bps });
+        }
         Ok(())
     }
 
@@ -1217,6 +1239,7 @@ pub mod span {
     }
 
     pub fn mark(ctx: Context<Mark>) -> Result<()> {
+        let band_bps = band::required_band(ctx.program_id, &ctx.accounts.gate.ticket.key(), ctx.remaining_accounts)?;
         let t = &ctx.accounts.gate.ticket;
         require!(t.state == TicketState::Sold, SpanError::NotSold);
         require!(t.span_loaded > 0, SpanError::NotLoaded);
@@ -1248,13 +1271,13 @@ pub mod span {
         let side = math::extends(price.price, high, low, p0, t.step_bps)?
             .ok_or(SpanError::NotExtension)?;
         require!(
-            math::payout(p0, high, low, t.strike_bps)? < VAULT_CAP,
+            math::payout(p0, high, low, t.strike_bps, band_bps)? < VAULT_CAP,
             SpanError::CapReached
         );
         let burn_per_mark = ctx.accounts.gate.config.burn_per_mark;
         require!(ctx.accounts.span_hold.amount >= burn_per_mark, SpanError::SpanShort);
-        let before = math::payout(p0, high, low, t.strike_bps)?;
-        let after = math::payout(p0, if side { price.price } else { high }, if side { low } else { price.price }, t.strike_bps)?;
+        let before = math::payout(p0, high, low, t.strike_bps, band_bps)?;
+        let after = math::payout(p0, if side { price.price } else { high }, if side { low } else { price.price }, t.strike_bps, band_bps)?;
         let burn = if after > before { burn_per_mark } else { 0 };
         let id_bytes = t.id.to_le_bytes();
         let bump = [t.bump];
@@ -1303,6 +1326,7 @@ pub mod span {
     }
 
     pub fn settle(ctx: Context<Settle>) -> Result<()> {
+        let band_bps = band::required_band(ctx.program_id, &ctx.accounts.ticket.key(), ctx.remaining_accounts)?;
         let candle = &ctx.accounts.candle;
         let end = math::add_time(
             math::add_time(candle.t0, math::window(candle.t0)?.1)?,
@@ -1332,7 +1356,7 @@ pub mod span {
             let (h, l) = t.high_low(candle);
             (
                 Outcome::Paid,
-                math::payout(candle.reads[0].price, h, l, t.strike_bps)?,
+                math::payout(candle.reads[0].price, h, l, t.strike_bps, band_bps)?,
                 h,
                 l,
             )

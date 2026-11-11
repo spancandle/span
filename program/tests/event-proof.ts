@@ -3,7 +3,7 @@ import { type LiteSVM } from "litesvm";
 import { type Address, type Instruction, unwrapOption } from "@solana/kit";
 import * as r from "../client/src/generated/index.js";
 import { type DecodedSpanEvent } from "../client/events.js";
-import { findVaultPda, findSpanHoldPda } from "../client/pdas.js";
+import { findVaultPda, findSpanHoldPda, findBandPda } from "../client/pdas.js";
 import { payout, highLow } from "../client/math.js";
 type Raw = ReturnType<LiteSVM["getAccount"]>;
 export async function verifyEvents(
@@ -23,7 +23,10 @@ export async function verifyEvents(
       if (old?.exists && old.programAddress === r.SPAN_PROGRAM_ADDRESS)
         return [];
     }
-    if (kind === r.SpanInstruction.OpenRunning) return ["TicketOpened", "UntilSet"];
+    if (kind === r.SpanInstruction.OpenRunning || kind === r.SpanInstruction.OpenTicket) {
+      const band = kind === r.SpanInstruction.OpenRunning ? r.parseOpenRunningInstruction(ix as any).data.bandBps : r.parseOpenTicketInstruction(ix as any).data.bandBps;
+      return ["TicketOpened", ...(kind === r.SpanInstruction.OpenRunning ? ["UntilSet"] : []), ...(band === 400 ? [] : ["BandSet"])];
+    }
     const names: Record<number, string> = {
       [r.SpanInstruction.Init]: "Initialized",
       [r.SpanInstruction.SetSpan]: "SpanSet",
@@ -43,6 +46,7 @@ export async function verifyEvents(
       [r.SpanInstruction.ListResale]: "ResaleListed",
       [r.SpanInstruction.BuyResale]: "Resold",
       [r.SpanInstruction.CloseResale]: "ResaleClosed",
+      [r.SpanInstruction.CloseBand]: "BandClosed",
     };
     return [names[kind]];
   });
@@ -56,6 +60,11 @@ export async function verifyEvents(
     const x = prior.get(a);
     if (!x?.exists) throw Error("Missing prior event account");
     return x;
+  };
+  const bandBps = async (ticket: Address) => {
+    const key = (await findBandPda(ticket))[0], live = svm.getAccount(key), snapshot = prior.get(key);
+    const raw = live.exists ? live : snapshot;
+    return raw?.exists && raw.data.length ? r.getBandDecoder().decode(raw.data).widthBps : 400;
   };
   const tokenAmount = (a: Address) => {
     const x = prior.get(a);
@@ -75,6 +84,18 @@ export async function verifyEvents(
   for (const event of events) {
     const d = event.data;
     switch (event.name) {
+      case "BandSet": {
+        const e = event.data, b = r.getBandDecoder().decode(bytes((await findBandPda(e.ticket))[0])), t = r.getTicketDecoder().decode(bytes(e.ticket));
+        expect(e).toEqual({ticket:e.ticket,id:t.id,widthBps:b.widthBps}); expect(b.seller).toBe(t.seller); expect(b.ticket).toBe(e.ticket);
+        break;
+      }
+      case "BandClosed": {
+        const e = event.data, b = r.getBandDecoder().decode(old(e.band).data), recipient = svm.getAccount(b.seller);
+        expect(e.ticket).toBe(b.ticket); expect(e.band).toBe((await findBandPda(e.ticket))[0]); expect(svm.getAccount(e.band).exists).toBe(false);
+        if (!recipient.exists) throw Error("Missing Band rent recipient");
+        expect(recipient.lamports - old(b.seller).lamports + (payer === b.seller ? fee : 0n)).toBe(old(e.band).lamports);
+        break;
+      }
       case "Initialized":
         expect(d).toEqual({
           admin: config!.admin,
@@ -156,7 +177,7 @@ export async function verifyEvents(
         const c = r.getCandleDecoder().decode(bytes(a.candle.address)), p = r.getTicketDecoder().decode(old(e.ticket).data);
         const high = c.readHigh > p.tailHigh ? c.readHigh : p.tailHigh;
         const low = p.tailLow === 0n || c.readLow < p.tailLow ? c.readLow : p.tailLow;
-        const recorded = payout(c, { ...p, tailHigh: e.price > high ? e.price : p.tailHigh, tailLow: e.price < low ? e.price : p.tailLow });
+        const recorded = payout(c, { ...p, bandBps: await bandBps(e.ticket), tailHigh: e.price > high ? e.price : p.tailHigh, tailLow: e.price < low ? e.price : p.tailLow });
         expect(d).toEqual({ ticket: e.ticket, id: t.id, t0: t.t0, buyer: unwrapOption(t.buyer), premium: t.premium,
           recorded, paid: recorded + t.premium, price: Buffer.from(bytes(a.feed.address)).readBigUInt64LE(168),
           publishTs: Buffer.from(bytes(a.feed.address)).readBigInt64LE(177), tailHigh: t.tailHigh, tailLow: t.tailLow, slot: svm.getClock().slot });
@@ -192,7 +213,7 @@ export async function verifyEvents(
         const a = r.parseBuyResaleInstruction(ix as any).accounts;
         const before = r.getTicketDecoder().decode(old(e.ticket).data), t = r.getTicketDecoder().decode(bytes(e.ticket));
         const c = r.getCandleDecoder().decode(bytes(a.candle.address)), offer = r.getResaleDecoder().decode(old(a.resale.address).data);
-        const range = highLow(c,before), recorded = payout(c,before);
+        const priced = {...before,bandBps:await bandBps(e.ticket)}, range = highLow(c,priced), recorded = payout(c,priced);
         expect(e).toEqual({ticket:e.ticket,id:before.id,t0:before.t0,from:unwrapOption(before.buyer),to:unwrapOption(t.buyer),ask:offer.ask,recorded,paid:recorded+offer.ask,...range,tailHigh:before.tailHigh,tailLow:before.tailLow,reads:c.reads.reduce((n,x,j)=>x.price?n|(1<<j):n,0),marks:before.marks,burned:before.burned,spanReturned:before.spanLoaded?tokenAmount((await findSpanHoldPda(e.ticket))[0]):0n,slot:svm.getClock().slot});
         expect(Buffer.from(bytes(a.holderUsdc.address)).readBigUInt64LE(64)-tokenAmount(a.holderUsdc.address)).toBe(e.paid);
         expect(svm.getAccount(a.resale.address).exists).toBe(false);
@@ -342,8 +363,8 @@ export async function verifyEvents(
               ? r.Outcome.Void
               : r.Outcome.Paid;
         const extrema =
-            outcome === r.Outcome.Paid ? highLow(c, t) : { high: 0n, low: 0n },
-          paid = outcome === r.Outcome.Paid ? payout(c, t) : 0n,
+            outcome === r.Outcome.Paid ? highLow(c, {...t,bandBps:await bandBps(e.ticket)}) : { high: 0n, low: 0n },
+          paid = outcome === r.Outcome.Paid ? payout(c, {...t,bandBps:await bandBps(e.ticket)}) : 0n,
           toBuyer = outcome === r.Outcome.Void ? t.premium : paid;
         expect(settled).toEqual({
           ticket: e.ticket,

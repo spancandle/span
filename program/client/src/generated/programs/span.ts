@@ -35,6 +35,7 @@ import {
   type SelfPlanAndSendFunctions,
 } from "@solana/kit/program-client-core";
 import {
+  getBandCodec,
   getBidCodec,
   getCandleCodec,
   getConfigCodec,
@@ -42,6 +43,8 @@ import {
   getResaleCodec,
   getTicketCodec,
   getUntilCodec,
+  type Band,
+  type BandArgs,
   type Bid,
   type BidArgs,
   type Candle,
@@ -63,6 +66,7 @@ import {
   getBuyInstructionAsync,
   getBuyResaleInstructionAsync,
   getBuyRunningInstructionAsync,
+  getCloseBandInstruction,
   getCloseBidInstructionAsync,
   getCloseRequestInstructionAsync,
   getCloseResaleInstruction,
@@ -92,6 +96,7 @@ import {
   parseBuyInstruction,
   parseBuyResaleInstruction,
   parseBuyRunningInstruction,
+  parseCloseBandInstruction,
   parseCloseBidInstruction,
   parseCloseRequestInstruction,
   parseCloseResaleInstruction,
@@ -121,6 +126,7 @@ import {
   type BuyAsyncInput,
   type BuyResaleAsyncInput,
   type BuyRunningAsyncInput,
+  type CloseBandInput,
   type CloseBidAsyncInput,
   type CloseRequestAsyncInput,
   type CloseResaleInput,
@@ -140,6 +146,7 @@ import {
   type ParsedBuyInstruction,
   type ParsedBuyResaleInstruction,
   type ParsedBuyRunningInstruction,
+  type ParsedCloseBandInstruction,
   type ParsedCloseBidInstruction,
   type ParsedCloseRequestInstruction,
   type ParsedCloseResaleInstruction,
@@ -176,6 +183,7 @@ import {
   type WithdrawAsyncInput,
 } from "../instructions/index.js";
 import {
+  findBandPda,
   findBidPda,
   findBidSpanPda,
   findBidUsdcPda,
@@ -194,6 +202,7 @@ export const SPAN_PROGRAM_ADDRESS =
   "ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd" as Address<"ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd">;
 
 export enum SpanAccount {
+  Band,
   Bid,
   Candle,
   Config,
@@ -207,6 +216,17 @@ export function identifySpanAccount(
   account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): SpanAccount {
   const data = "data" in account ? account.data : account;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([187, 233, 241, 76, 86, 127, 89, 203]),
+      ),
+      0,
+    )
+  ) {
+    return SpanAccount.Band;
+  }
   if (
     containsBytes(
       data,
@@ -291,6 +311,8 @@ export function identifySpanAccount(
 }
 
 export enum SpanEvent {
+  BandClosed,
+  BandSet,
   BidAccepted,
   BidClosed,
   BidPlaced,
@@ -324,6 +346,28 @@ export function identifySpanEvent(
   event: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): SpanEvent {
   const data = "data" in event ? event.data : event;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([101, 66, 243, 77, 71, 67, 12, 67]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.BandClosed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([50, 51, 17, 112, 147, 58, 8, 84]),
+      ),
+      0,
+    )
+  ) {
+    return SpanEvent.BandSet;
+  }
   if (
     containsBytes(
       data,
@@ -632,6 +676,7 @@ export enum SpanInstruction {
   Buy,
   BuyResale,
   BuyRunning,
+  CloseBand,
   CloseBid,
   CloseRequest,
   CloseResale,
@@ -716,6 +761,17 @@ export function identifySpanInstruction(
     )
   ) {
     return SpanInstruction.BuyRunning;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([128, 213, 13, 217, 209, 224, 32, 209]),
+      ),
+      0,
+    )
+  ) {
+    return SpanInstruction.CloseBand;
   }
   if (
     containsBytes(
@@ -1004,6 +1060,9 @@ export type ParsedSpanInstruction<
       instructionType: SpanInstruction.BuyRunning;
     } & ParsedBuyRunningInstruction<TProgram>)
   | ({
+      instructionType: SpanInstruction.CloseBand;
+    } & ParsedCloseBandInstruction<TProgram>)
+  | ({
       instructionType: SpanInstruction.CloseBid;
     } & ParsedCloseBidInstruction<TProgram>)
   | ({
@@ -1114,6 +1173,13 @@ export function parseSpanInstruction<TProgram extends string>(
       return {
         instructionType: SpanInstruction.BuyRunning,
         ...parseBuyRunningInstruction(instruction),
+      };
+    }
+    case SpanInstruction.CloseBand: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SpanInstruction.CloseBand,
+        ...parseCloseBandInstruction(instruction),
       };
     }
     case SpanInstruction.CloseBid: {
@@ -1302,6 +1368,7 @@ export type SpanPlugin = {
 };
 
 export type SpanPluginAccounts = {
+  band: ReturnType<typeof getBandCodec> & SelfFetchFunctions<BandArgs, Band>;
   bid: ReturnType<typeof getBidCodec> & SelfFetchFunctions<BidArgs, Bid>;
   candle: ReturnType<typeof getCandleCodec> &
     SelfFetchFunctions<CandleArgs, Candle>;
@@ -1336,6 +1403,9 @@ export type SpanPluginInstructions = {
     input: BuyRunningAsyncInput,
   ) => ReturnType<typeof getBuyRunningInstructionAsync> &
     SelfPlanAndSendFunctions;
+  closeBand: (
+    input: CloseBandInput,
+  ) => ReturnType<typeof getCloseBandInstruction> & SelfPlanAndSendFunctions;
   closeBid: (
     input: CloseBidAsyncInput,
   ) => ReturnType<typeof getCloseBidInstructionAsync> &
@@ -1431,6 +1501,7 @@ export type SpanPluginPdas = {
   bidUsdc: typeof findBidUsdcPda;
   resale: typeof findResalePda;
   bidSpan: typeof findBidSpanPda;
+  band: typeof findBandPda;
   vault: typeof findVaultPda;
   until: typeof findUntilPda;
   requestUsdc: typeof findRequestUsdcPda;
@@ -1455,6 +1526,7 @@ export function spanProgram() {
     return extendClient(client, {
       span: <SpanPlugin>{
         accounts: {
+          band: addSelfFetchFunctions(client, getBandCodec()),
           bid: addSelfFetchFunctions(client, getBidCodec()),
           candle: addSelfFetchFunctions(client, getCandleCodec()),
           config: addSelfFetchFunctions(client, getConfigCodec()),
@@ -1486,6 +1558,8 @@ export function spanProgram() {
               client,
               getBuyRunningInstructionAsync(input),
             ),
+          closeBand: (input) =>
+            addSelfPlanAndSendFunctions(client, getCloseBandInstruction(input)),
           closeBid: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1606,6 +1680,7 @@ export function spanProgram() {
           bidUsdc: findBidUsdcPda,
           resale: findResalePda,
           bidSpan: findBidSpanPda,
+          band: findBandPda,
           vault: findVaultPda,
           until: findUntilPda,
           requestUsdc: findRequestUsdcPda,

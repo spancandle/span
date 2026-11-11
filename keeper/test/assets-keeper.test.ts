@@ -15,7 +15,7 @@ it('defaults to SOL and expands only release hours into the requested assets',as
 });
 it('mixed feed publications cannot abandon another asset read or supply its mark trigger',async()=>{
  const h=await Harness.create({setSpan:true}),refs=[];for(const asset of [0,1,2] as const){h.clock(1000n);const t=await h.open({t0:1200n+BigInt(asset),loaded:true});refs.push(t);h.clock(t.t0);h.price(prices[asset],t.t0);if(asset)h.clone(SOL_FEED,feeds[asset],d=>d.set(getAddressEncoder().encode(mintOf(asset)),8));await h.send('opening',h.readIx(t,0,{feed:feeds[asset]}));}
- const chain=new Chain({cluster:'mainnet'} as any,{} as any,()=>{});chain.config=h.configState();chain.now=()=>1510n;
+ const chain=new Chain({cluster:'mainnet'} as any,{} as any,()=>{});chain.config=h.configState();chain.bandBps=()=>400;chain.now=()=>1510n;
  for(const t of refs){chain.candles.set(t.candle,{value:h.candleState(t),slot:1,data:''});chain.tickets.set(t.ticket,{value:h.ticketState(t),slot:1,data:''});}
  chain.feeds.set(0,{price:prices[0],publishTs:1501n,slot:1,source:'poll',recvMs:0});chain.feeds.set(1,{price:prices[1]*101n/100n,publishTs:1522n,slot:2,source:'poll',recvMs:0});
  const sent:any[]=[];const engine=new Engine(chain,h.marker.address,{blockhash:()=> 'hash',price:()=>1n,prepare:async(action,price)=>({action,price,signature:action.key,wire:'',blockhash:'hash',lastValidBlockHeight:10n,rent:0n}),send:(p,v)=>sent.push({p,v}),cancel:()=>{}},{available:()=>true,reserve:()=>true,waiting:new Set()},()=>{});
@@ -30,7 +30,7 @@ it('the actual engine and transaction builder open three candles and drive 39 re
  h.svm.withBlockhashCheck(false);h.clock(base-86398n);
  const raw=(key:any)=>{const a=h.svm.getAccount(key);return a.exists?{owner:a.programAddress,executable:a.executable,lamports:Number(a.lamports),data:[Buffer.from(a.data).toString('base64'),'base64']}:null;};
  const rpc={cluster:'mainnet',call:async(method:string,params:any[])=>{if(method==='getAccountInfo')return{value:raw(params[0])};if(method==='getMultipleAccounts')return{value:params[0].map(raw)};if(method==='getMinimumBalanceForRentExemption')return 1905000;throw Error(method);}};
- const chain=new Chain(rpc as any,{} as any,()=>{},h.marker.address);chain.configKey=h.config;chain.config=h.configState();chain.now=()=>h.svm.getClock().unixTimestamp;
+ const chain=new Chain(rpc as any,{} as any,()=>{},h.marker.address);chain.configKey=h.config;chain.config=h.configState();chain.bandBps=()=>400;chain.now=()=>h.svm.getClock().unixTimestamp;
  const candles=await Promise.all(times.map(async t0=>({t0,candle:(await s.findCandlePda(t0))[0]}))),tickets:any[]=[],receipts:any[]=[],errors:string[]=[],sent:any[]=[];let slot=1,engine:Engine;
  const sync=()=>{for(const ref of candles)if(h.svm.getAccount(ref.candle).exists)chain.candles.set(ref.candle,{value:h.candleState(ref),slot:slot++,data:''});for(const ref of tickets){if(h.svm.getAccount(ref.ticket).exists)chain.tickets.set(ref.ticket,{value:h.ticketState(ref),slot:slot++,data:''});else chain.tickets.delete(ref.ticket);}};
  const preparedIxs=new Map<string,any>();const prepare=await createPrepare(rpc as any,h.marker,chain,{register:(key,ixs)=>preparedIxs.set(key,ixs)},()=>({blockhash:h.svm.latestBlockhash(),lastValidBlockHeight:1000000000000n}));

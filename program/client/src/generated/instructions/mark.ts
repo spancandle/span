@@ -33,13 +33,14 @@ import {
 } from "@solana/kit";
 import {
   getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
   type InstructionAccountInput,
   type InstructionAccountInputAddress,
   type InstructionSignerInput,
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
-import { findConfigPda } from "../pdas/index.js";
+import { findBandPda, findConfigPda } from "../pdas/index.js";
 import { SPAN_PROGRAM_ADDRESS } from "../programs/index.js";
 
 export const MARK_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -62,6 +63,7 @@ export type MarkInstruction<
   TAccountSpanTokenProgram extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountBand extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -98,6 +100,9 @@ export type MarkInstruction<
       TAccountProgram extends string
         ? ReadonlyAccount<TAccountProgram>
         : TAccountProgram,
+      TAccountBand extends string
+        ? ReadonlyAccount<TAccountBand>
+        : TAccountBand,
       ...TRemainingAccounts,
     ]
   >;
@@ -142,6 +147,7 @@ export type MarkAsyncInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   marker: TAccountMarker;
   config?: TAccountConfig;
@@ -153,6 +159,7 @@ export type MarkAsyncInput<
   spanTokenProgram: TAccountSpanTokenProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band?: TAccountBand;
 };
 
 export async function getMarkInstructionAsync<
@@ -166,6 +173,7 @@ export async function getMarkInstructionAsync<
   TAccountSpanTokenProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: MarkAsyncInput<
@@ -178,7 +186,8 @@ export async function getMarkInstructionAsync<
     TAccountSpanHold,
     TAccountSpanTokenProgram,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -223,6 +232,10 @@ export async function getMarkInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >
 > {
@@ -264,6 +277,7 @@ export async function getMarkInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -273,6 +287,17 @@ export async function getMarkInstructionAsync<
   // Resolve default values.
   if (!accounts.config.value) {
     accounts.config.value = await findConfigPda({ programAddress });
+  }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
   }
 
   return Object.freeze({
@@ -287,6 +312,7 @@ export async function getMarkInstructionAsync<
       getAccountMeta("spanTokenProgram", accounts.spanTokenProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getMarkInstructionDataEncoder().encode({}),
     programAddress,
@@ -331,6 +357,10 @@ export async function getMarkInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -348,6 +378,7 @@ export type MarkInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   marker: TAccountMarker;
   config: TAccountConfig;
@@ -359,6 +390,7 @@ export type MarkInput<
   spanTokenProgram: TAccountSpanTokenProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band: TAccountBand;
 };
 
 export function getMarkInstruction<
@@ -372,6 +404,7 @@ export function getMarkInstruction<
   TAccountSpanTokenProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: MarkInput<
@@ -384,7 +417,8 @@ export function getMarkInstruction<
     TAccountSpanHold,
     TAccountSpanTokenProgram,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): MarkInstruction<
@@ -428,6 +462,10 @@ export function getMarkInstruction<
   ResolvedInstructionAccountMeta<
     TAccountProgram,
     InstructionAccountInputAddress<TAccountProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
   >
 > {
   // Program address.
@@ -468,6 +506,7 @@ export function getMarkInstruction<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -486,6 +525,7 @@ export function getMarkInstruction<
       getAccountMeta("spanTokenProgram", accounts.spanTokenProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getMarkInstructionDataEncoder().encode({}),
     programAddress,
@@ -530,6 +570,10 @@ export function getMarkInstruction<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -550,6 +594,7 @@ export type ParsedMarkInstruction<
     spanTokenProgram: TAccountMetas[7];
     eventAuthority: TAccountMetas[8];
     program: TAccountMetas[9];
+    band: TAccountMetas[10];
   };
   data: MarkInstructionData;
 };
@@ -562,12 +607,12 @@ export function parseMarkInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedMarkInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 10) {
+  if (instruction.accounts.length < 11) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 10,
+        expectedAccountMetas: 11,
       },
     );
   }
@@ -590,6 +635,7 @@ export function parseMarkInstruction<
       spanTokenProgram: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
+      band: getNextAccount(),
     },
     data: getMarkInstructionDataDecoder().decode(instruction.data),
   };

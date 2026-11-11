@@ -14,7 +14,7 @@ it('production polling discovers a changed marker and a first load during the ho
  const raw=(key:Address)=>{const a=h.svm.getAccount(key);return a.exists?{owner:a.programAddress,lamports:Number(a.lamports),data:[Buffer.from(a.data).toString('base64'),'base64']}:null;};
  const rpc={cluster:'mainnet',call:vi.fn(async(method:string,params:any[])=>{
   if(method==='getMultipleAccounts')return{context:{slot:10},value:params[0].map(raw)};
-  expect(method).toBe('getProgramAccounts');const candle=params[1].filters[0].memcmp.bytes===getBase58Decoder().decode(s.CANDLE_DISCRIMINATOR);
+  expect(method).toBe('getProgramAccounts');const candle=params[1].filters?.[0]?.memcmp.bytes===getBase58Decoder().decode(s.CANDLE_DISCRIMINATOR);
   return{context:{slot:10},value:(candle?[a.candle]:[a.ticket,b.ticket]).map(pubkey=>({pubkey,account:raw(pubkey)}))};
  })};
  const chain=new Chain(rpc as any,{subscribe:()=>()=>{}} as any,()=>{},h.stranger.address);chain.config=h.configState();chain.now=()=>h.svm.getClock().unixTimestamp;

@@ -47,7 +47,7 @@ for(const auto of [false,true])it(`runs six real candle lifecycles through the p
   if(method==='getMinimumBalanceForRentExemption')return Number(h.svm.minimumBalanceForRentExemption(BigInt(args[0])));
   throw Error(method);
  }},ws={subscribe:()=>()=>{},on:()=>{},start:()=>{},close:()=>{}},chain=new Chain(rpc as any,ws as any,()=>{},h.marker.address),store=new Store(join(dir,'tape.sqlite')),history=new History(store,rpc as any,()=>{}),recorder=new DovesRecorder(store,rpc as any);
- chain.config=h.configState();chain.configKey=h.config;chain.now=()=>h.svm.getClock().unixTimestamp;
+ chain.config=h.configState();chain.configKey=h.config;chain.bandBps=()=>400;chain.now=()=>h.svm.getClock().unixTimestamp;
  const publisher=new Publisher(store,chain,history,recorder,join(dir,'public'),()=>0,[1200n]);
  const sync=()=>{chain.config=h.configState();const slot=Number(h.svm.getClock().slot);for(const t of refs){chain.ingest('candle',t.candle,raw(t.candle),slot);chain.ingest('ticket',t.ticket,raw(t.ticket),slot);}};
  const captured:any[]=[],sent:any[]=[],errors:any[]=[];let engine:Engine;
@@ -134,14 +134,14 @@ it('filters before receipt, withdrawal and reason limits and before selecting fe
  try{store.db.prepare('INSERT INTO hour_reason VALUES(?,?,?,?)').run('1200','Hour reason','holder','sig-hour');for(let i=0;i<501;i++)store.db.prepare('INSERT INTO hour_reason VALUES(?,?,?,?)').run(String(1203+i*60),'Half reason','holder',`sig-${i}`);
   const book=pub.historyDocument();expect(book.receipts).toHaveLength(1);expect(book.withdrawals).toHaveLength(1);expect(book.candles.map(c=>c.t0)).toEqual(['1200']);expect(pub.hoursDocument().hours.map(r=>r.t0)).toEqual(['1200']);
   const feed=pub.feedDocument();expect(feed.from).toBe('1260');expect(feed.assets.BTC.from).toBe('1261');expect(pub.versioned().feedDocument().from).toBe('1203');expect(pub.versioned().feedDocument().assets.BTC.from).toBe('1204');
-  chain.now=()=>5000n;const scheduled=new Publisher(store,chain,{events:()=>[]}as any,new DovesRecorder(store,{cluster:'mainnet'}as any),mkdtempSync(join(tmpdir(),'span-half-scheduled-')),()=>0,[1200n]);expect(scheduled.historyDocument().candles).toEqual([]);expect(scheduled.versioned().historyDocument().candles.map(c=>c.t0).sort()).toEqual(['1203','1204']);
+  chain.bandBps=()=>400;chain.now=()=>5000n;const scheduled=new Publisher(store,chain,{events:()=>[]}as any,new DovesRecorder(store,{cluster:'mainnet'}as any),mkdtempSync(join(tmpdir(),'span-half-scheduled-')),()=>0,[1200n]);expect(scheduled.historyDocument().candles).toEqual([]);expect(scheduled.versioned().historyDocument().candles.map(c=>c.t0).sort()).toEqual(['1203','1204']);
  }finally{store.close();}
 });
 
 it('keeps half-hour recording and holding windows bounded and refuses an extending mark published after its end',async()=>{
  const h=await Harness.create({setSpan:true}),t=await h.open({t0:1203n,loaded:true}),end=t.t0+1800n;h.svm.withBlockhashCheck(false);h.clock(t.t0);h.price(prices[0],t.t0);await h.send('open_read',h.readIx(t,0));h.clock(end);h.price(prices[0],end);await h.send('last_read',h.readIx(t,6));
  const raw=(key:any)=>{const a=h.svm.getAccount(key);return a.exists?{owner:a.programAddress,data:[Buffer.from(a.data).toString('base64'),'base64']}:null;},rpc={cluster:'mainnet',call:async(method:string,args:any[])=>method==='getMultipleAccounts'?{context:{slot:Number(h.svm.getClock().slot)},value:args[0].map(raw)}:null},chain=new Chain(rpc as any,{subscribe:()=>()=>{},on:()=>{},start:()=>{},close:()=>{}}as any,()=>{},h.marker.address);
- chain.now=()=>h.svm.getClock().unixTimestamp;chain.config=h.configState();chain.candles.set(t.candle,{value:h.candleState(t),slot:1,data:''});chain.tickets.set(t.ticket,{value:h.ticketState(t),slot:1,data:''});
+ chain.bandBps=()=>400;chain.now=()=>h.svm.getClock().unixTimestamp;chain.config=h.configState();chain.candles.set(t.candle,{value:h.candleState(t),slot:1,data:''});chain.tickets.set(t.ticket,{value:h.ticketState(t),slot:1,data:''});
  const send=vi.fn(),engine=new Engine(chain,h.marker.address,{blockhash:()=>h.svm.latestBlockhash(),price:()=>10000n,prepare:async(action,price)=>({action,price,blockhash:h.svm.latestBlockhash(),signature:'test',wire:'',lastValidBlockHeight:1000000n,rent:0n})as any,send,cancel:()=>{}},{available:()=>true,reserve:()=>true,waiting:new Set()},()=>{});
  try{h.clock(end+1n);chain.feeds.set(0,{price:prices[0]*102n/100n,publishTs:end+1n,slot:1,source:'poll',at:Date.now()}as any);engine.update();await new Promise(r=>setTimeout(r,10));expect(send).not.toHaveBeenCalled();
   h.clock(end+20n);await chain.pollSpanHolds('keeper');expect(chain.spanHolds.has(t.ticket)).toBe(true);h.clock(end+21n);await chain.pollSpanHolds('keeper');expect(chain.spanHolds.has(t.ticket)).toBe(false);

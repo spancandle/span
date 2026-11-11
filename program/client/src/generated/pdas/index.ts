@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./band.js";
 export * from "./bid.js";
 export * from "./bidSpan.js";
 export * from "./bidUsdc.js";

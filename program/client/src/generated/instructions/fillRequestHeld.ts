@@ -41,6 +41,7 @@ import {
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
 import {
+  findBandPda,
   findConfigPda,
   findRequestSpanPda,
   findRequestUsdcPda,
@@ -82,6 +83,7 @@ export type FillRequestHeldInstruction<
   TAccountRequestSpan extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountBand extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -151,6 +153,9 @@ export type FillRequestHeldInstruction<
       TAccountProgram extends string
         ? ReadonlyAccount<TAccountProgram>
         : TAccountProgram,
+      TAccountBand extends string
+        ? ReadonlyAccount<TAccountBand>
+        : TAccountBand,
       ...TRemainingAccounts,
     ]
   >;
@@ -211,6 +216,7 @@ export type FillRequestHeldAsyncInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   holder: TAccountHolder;
   config?: TAccountConfig;
@@ -233,6 +239,7 @@ export type FillRequestHeldAsyncInput<
   requestSpan?: TAccountRequestSpan;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band?: TAccountBand;
 };
 
 export async function getFillRequestHeldInstructionAsync<
@@ -257,6 +264,7 @@ export async function getFillRequestHeldInstructionAsync<
   TAccountRequestSpan extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: FillRequestHeldAsyncInput<
@@ -280,7 +288,8 @@ export async function getFillRequestHeldInstructionAsync<
     TAccountHolderSpan,
     TAccountRequestSpan,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -369,6 +378,10 @@ export async function getFillRequestHeldInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >
 > {
@@ -461,6 +474,7 @@ export async function getFillRequestHeldInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -512,6 +526,17 @@ export async function getFillRequestHeldInstructionAsync<
       { programAddress },
     );
   }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
 
   return Object.freeze({
     accounts: [
@@ -536,6 +561,7 @@ export async function getFillRequestHeldInstructionAsync<
       getAccountMeta("requestSpan", accounts.requestSpan),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getFillRequestHeldInstructionDataEncoder().encode({}),
     programAddress,
@@ -624,6 +650,10 @@ export async function getFillRequestHeldInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -655,6 +685,7 @@ export type FillRequestHeldInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   holder: TAccountHolder;
   config: TAccountConfig;
@@ -677,6 +708,7 @@ export type FillRequestHeldInput<
   requestSpan?: TAccountRequestSpan;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band: TAccountBand;
 };
 
 export function getFillRequestHeldInstruction<
@@ -701,6 +733,7 @@ export function getFillRequestHeldInstruction<
   TAccountRequestSpan extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: FillRequestHeldInput<
@@ -724,7 +757,8 @@ export function getFillRequestHeldInstruction<
     TAccountHolderSpan,
     TAccountRequestSpan,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): FillRequestHeldInstruction<
@@ -812,6 +846,10 @@ export function getFillRequestHeldInstruction<
   ResolvedInstructionAccountMeta<
     TAccountProgram,
     InstructionAccountInputAddress<TAccountProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
   >
 > {
   // Program address.
@@ -903,6 +941,7 @@ export function getFillRequestHeldInstruction<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -942,6 +981,7 @@ export function getFillRequestHeldInstruction<
       getAccountMeta("requestSpan", accounts.requestSpan),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getFillRequestHeldInstructionDataEncoder().encode({}),
     programAddress,
@@ -1030,6 +1070,10 @@ export function getFillRequestHeldInstruction<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -1061,6 +1105,7 @@ export type ParsedFillRequestHeldInstruction<
     requestSpan?: TAccountMetas[18] | undefined;
     eventAuthority: TAccountMetas[19];
     program: TAccountMetas[20];
+    band: TAccountMetas[21];
   };
   data: FillRequestHeldInstructionData;
 };
@@ -1073,12 +1118,12 @@ export function parseFillRequestHeldInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFillRequestHeldInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 21) {
+  if (instruction.accounts.length < 22) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 21,
+        expectedAccountMetas: 22,
       },
     );
   }
@@ -1118,6 +1163,7 @@ export function parseFillRequestHeldInstruction<
       requestSpan: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
+      band: getNextAccount(),
     },
     data: getFillRequestHeldInstructionDataDecoder().decode(instruction.data),
   };

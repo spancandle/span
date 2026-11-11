@@ -70,7 +70,9 @@ export async function runTape() {
     ),
     chainReader = new ChainReader(rpc, pub, history),
     server = httpServer(pub);
-  atomicFile(pub, "readers.json", readersDocument(rpc.cluster, readers));
+  const readerDoc=readersDocument(rpc.cluster, readers);
+  atomicFile(pub, "readers.json", readerDoc);
+  atomicFile(resolve(pub,"v3"), "readers.json", readerDoc);
   await new Promise<void>((yes, no) => {
     server.once("error", () => no(Error("Tape HTTP listener unavailable")));
     server.listen(

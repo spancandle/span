@@ -38,6 +38,15 @@ export async function createPrepare(
     if (mode === "marks" && a.kind !== "mark") throw Error("Marks-only keeper cannot prepare this action");
     const hash = latest();
     if (!hash) throw Error("Preparation unavailable");
+    if (a.kind === "closeBand") {
+      const key=address(a.band!),value=chain.bands.get(key)?.value;
+      if (!value) throw Error("Band closed");
+      const observed=await rpc.call("getAccountInfo",[value.ticket,{encoding:"base64",commitment:"confirmed"}]);
+      if (!observed || !("value" in observed) || (observed.value && bytes(observed.value).length > 0)) throw Error("Ticket still present");
+      const ix=s.getCloseBandInstruction({band:key,ticket:value.ticket,seller:value.seller,closer:payer,eventAuthority,program:s.SPAN_PROGRAM_ADDRESS});
+      priorities.register(a.key,[ix],payer.address);
+      return prepareTransaction([ix],payer,hash,a,fee);
+    }
     if (a.kind === "closeRequest") {
       const request=address(a.request!),value=chain.requests.get(request)?.value,config=chain.config;
       if (!value || !config) throw Error("Request preparation unavailable");
@@ -138,12 +147,14 @@ export async function createPrepare(
     if (a.kind === "settle") {
       const t = chain.tickets.get(address(a.ticket!));
       if (!t) throw Error("Ticket closed");
+      const bandBps = chain.bandBps(address(a.ticket!));
+      if (bandBps === undefined) throw Error("Ticket band unavailable");
       const built = await settlement(
         rpc,
         payer,
         chain.config,
         chain.candles.get(candle)!.value,
-        t.value,
+        {...t.value,bandBps},
         address(a.ticket!),
       );
       priorities.register(a.key, built.ixs, payer.address);
@@ -156,6 +167,7 @@ export async function createPrepare(
       eventAuthority,
       program: s.SPAN_PROGRAM_ADDRESS,
     };
+    if (a.kind === "mark" && chain.bandBps(address(a.ticket!)) === undefined) throw Error("Ticket band unavailable");
     const ix =
       a.kind === "read"
         ? s.getReadInstruction({ ...accounts, j: a.j! })
@@ -163,6 +175,7 @@ export async function createPrepare(
             ...accounts,
             marker: payer,
             ticket: address(a.ticket!),
+            band: (await s.findBandPda(address(a.ticket!)))[0],
             spanMint: unwrapOption(chain.config.spanMint)!,
             spanHold: (await s.findSpanHoldPda(address(a.ticket!)))[0],
             spanTokenProgram: unwrapOption(chain.config.spanTokenProgram)!,

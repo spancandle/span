@@ -51,7 +51,7 @@ export class Engine {
     readonly chain: Pick<
       Chain,
       "candles" | "tickets" | "config" | "feed" | "now"
-    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils" | "resales" | "bids" | "requests">>,
+    > & Partial<Pick<Chain, "spanHolds" | "spanRead" | "feeds" | "untils" | "resales" | "bids" | "requests" | "bands" | "bandBps">>,
     readonly keeper: Address,
     readonly port: EnginePort,
     readonly budget: Pick<CreationBudget, "available" | "reserve" | "waiting">,
@@ -82,9 +82,17 @@ export class Engine {
       now >= t0 - 86400n &&
       now < t0 - BigInt(this.chain.config.buyCutoff) - 30n;
   }
+  private pricedTicket(key: Address) {
+    const t = this.chain.tickets.get(key)?.value;
+    const bandBps = this.chain.bandBps ? this.chain.bandBps(key) : (t as (Ticket & {bandBps?:number}) | undefined)?.bandBps;
+    return t && bandBps !== undefined ? {...t, bandBps} : undefined;
+  }
   private actions(): Action[] {
     const now = this.chain.now(),
       out: Action[] = [];
+    for (const [key,p] of [...this.pending,...this.prepared])
+      if ((p.action.kind === "mark" || p.action.kind === "settle") &&
+          !this.pricedTicket(p.action.ticket as Address)) this.complete(key);
     for (const key of this.awaitingMarks.keys()) this.observationPending(key);
     for (const t0 of this.releaseHours) {
       const key = `open:${t0}`;
@@ -175,7 +183,8 @@ export class Engine {
           tailLow: t.tailLow,
         });
       }
-      if (this.options.mode === "full" && now >= settleAfter(c) - 30n) {
+      const priced = this.pricedTicket(key);
+      if (priced && this.options.mode === "full" && now >= settleAfter(c) - 30n) {
         out.push({
           key: `settle:${key}`,
           kind: "settle",
@@ -184,7 +193,7 @@ export class Engine {
         });
       }
       if (
-        t.state === TicketState.Sold &&
+        priced && t.state === TicketState.Sold &&
         t.spanLoaded > 0n &&
         t.marker === this.keeper &&
         (this.options.policy !== "paced-v1" || now <= c.t0 + secsOf(c.t0) + BigInt(c.ageLimit)) &&
@@ -202,6 +211,9 @@ export class Engine {
           end: c.t0 + secsOf(c.t0) + BigInt(c.ageLimit) + 2n,
         });
     }
+    for (const [band, {value}] of this.chain.bands ?? [])
+      if (this.options.mode === "full" && !this.chain.tickets.has(value.ticket))
+        out.push({key:`closeBand:${band}`,kind:"closeBand",band,t0:0n});
     for (const [until, {value}] of this.chain.untils ?? [])
       if (this.options.mode === "full" && !this.chain.tickets.has(value.ticket))
         out.push({key:`closeUntil:${until}`,kind:"closeUntil",until,t0:0n});
@@ -227,6 +239,11 @@ export class Engine {
     for (const [key,p] of [...this.pending,...this.prepared])
       if (p.action.kind === "closeResale") {
         const value = this.chain.resales?.get(p.action.resale as Address)?.value;
+        if (!value || this.chain.tickets.has(value.ticket)) this.complete(key);
+      }
+    for (const [key,p] of [...this.pending,...this.prepared])
+      if (p.action.kind === "closeBand") {
+        const value = this.chain.bands?.get(p.action.band as Address)?.value;
         if (!value || this.chain.tickets.has(value.ticket)) this.complete(key);
       }
     for (const [key,p] of [...this.pending,...this.prepared])
@@ -333,6 +350,10 @@ export class Engine {
       const value=this.chain.resales?.get(a.resale as Address)?.value;
       return !!value && !this.chain.tickets.has(value.ticket);
     }
+    if (a.kind === "closeBand") {
+      const value = this.chain.bands?.get(a.band as Address)?.value;
+      return !!value && !this.chain.tickets.has(value.ticket);
+    }
     if (a.kind === "closeUntil") {
       const value = this.chain.untils?.get(a.until as Address)?.value;
       return !!value && !this.chain.tickets.has(value.ticket);
@@ -340,14 +361,14 @@ export class Engine {
     if (a.kind === "open") return this.canOpen(a.t0) && !this.abandoned.has(a.key);
     const c = this.candle(a),
       v = this.feed(a.t0);
-    if (a.kind === "settle") return this.chain.now() >= settleAfter(c);
+    if (a.kind === "settle") return !!this.pricedTicket(a.ticket as Address) && this.chain.now() >= settleAfter(c);
     if (!v) return false;
     if (a.kind === "read")
       return (
         v.publishTs >= boundary(c.t0, a.j!) &&
         v.publishTs <= boundary(c.t0, a.j!) + BigInt(c.readWindow)
       );
-    const t = this.chain.tickets.get(a.ticket as Address)?.value;
+    const t = this.pricedTicket(a.ticket as Address);
     if (
       !t ||
       v.publishTs <= t.t0 ||
@@ -367,13 +388,13 @@ export class Engine {
     const actions = this.actions();
     for (const a of actions) {
         if (a.kind === "closeResale" || a.kind === "closeBid" || a.kind === "closeRequest") continue;
-        if (a.kind === "closeUntil") continue;
+        if (a.kind === "closeUntil" || a.kind === "closeBand") continue;
         const v=this.feed(a.t0);
         if (a.kind !== "mark" || !v) continue;
-        const t = this.chain.tickets.get(a.ticket as Address)!.value,
+        const t = this.pricedTicket(a.ticket as Address),
           c = this.candle(a);
         if (
-          v.publishTs <= t.t0 ||
+          !t || v.publishTs <= t.t0 ||
           v.publishTs > t.t0 + secsOf(t.t0) ||
           !markAccepts(c, t, v.price).accepted
         )
@@ -398,7 +419,7 @@ export class Engine {
         }
       }
     for (const a of actions) {
-      const v=(a.kind === "closeResale" || a.kind === "closeBid" || a.kind === "closeRequest") ? undefined : a.kind === "closeUntil" ? undefined : this.feed(a.t0);
+      const v=(a.kind === "closeResale" || a.kind === "closeBid" || a.kind === "closeRequest") ? undefined : (a.kind === "closeUntil" || a.kind === "closeBand") ? undefined : this.feed(a.t0);
       if (a.kind === "read" && v) {
         const b = boundary(a.t0, a.j!),
           c = this.candle(a);
@@ -488,7 +509,7 @@ export class Engine {
       if (error === "BuyClosed") this.abandoned.add(p.action.key);
       this.next.set(p.action.key, Date.now() + 2000);
     }
-    if (p.action.kind === "settle" || p.action.kind === "closeUntil" || (p.action.kind === "closeResale" || p.action.kind === "closeBid" || p.action.kind === "closeRequest"))
+    if (p.action.kind === "settle" || p.action.kind === "closeUntil" || p.action.kind === "closeBand" || (p.action.kind === "closeResale" || p.action.kind === "closeBid" || p.action.kind === "closeRequest"))
       this.next.set(p.action.key, Date.now() + 2000);
     if (error === "AlreadyProcessed") {
       if (p.action.kind === "mark") this.marked.delete(p.action.key);

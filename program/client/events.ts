@@ -7,6 +7,8 @@ import * as generated from "./src/generated/index.js";
 
 const CPI_PREFIX = new Uint8Array([228, 69, 165, 46, 81, 203, 154, 29]);
 const decoders = {
+  BandSet: generated.getBandSetEventDecoder(),
+  BandClosed: generated.getBandClosedEventDecoder(),
   Initialized: generated.getInitializedEventDecoder(),
   SpanSet: generated.getSpanSetEventDecoder(),
   FeedSet: generated.getFeedSetEventDecoder(),

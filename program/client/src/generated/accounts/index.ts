@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./band.js";
 export * from "./bid.js";
 export * from "./candle.js";
 export * from "./config.js";

@@ -26,7 +26,7 @@ async function fixture(o:{deferSpan?:boolean}={}) {
  const raw=(key:Address)=>{const a=h.svm.getAccount(key);return a.exists?{owner:a.programAddress,lamports:Number(a.lamports),data:[Buffer.from(a.data).toString('base64'),'base64']}:null;};
  const subs:any[]=[],rpc={cluster:'mainnet',call:vi.fn(async(method:string,params:any[])=>{
   if(method==='getAccountInfo')return{context:{slot:100},value:raw(params[0])};
-  if(method==='getProgramAccounts')return{context:{slot:100},value:h.svm.getProgramAccounts(s.SPAN_PROGRAM_ADDRESS).filter(a=>getBase58Decoder().decode(a.data.subarray(0,8))===params[1].filters[0].memcmp.bytes).map(a=>({pubkey:a.address,account:raw(a.address)}))};
+  if(method==='getProgramAccounts')return{context:{slot:100},value:h.svm.getProgramAccounts(s.SPAN_PROGRAM_ADDRESS).filter(a=>(!params[1].filters?.length||getBase58Decoder().decode(a.data.subarray(0,8))===params[1].filters[0].memcmp.bytes)).map(a=>({pubkey:a.address,account:raw(a.address)}))};
   if(method==='getMultipleAccounts')return{context:{slot:100},value:params[0].map(raw)};
   throw Error(method);
  })},ws={subscribe:(kind:string,args:any[],cb:any)=>{subs.push({kind,args,cb});return()=>{};},on:()=>{},start:()=>{},close:()=>{}};
@@ -69,6 +69,7 @@ it('does not prepare a cleanup while a confirmed ticket still exists, even when 
 });
 for(const markAfterEntry of [false,true])it(`production decisions and tape handle a running purchase with ${markAfterEntry?'one mark':'no marks'} through settlement and cleanup`,async()=>{
  const x=await fixture({deferSpan:true}),dir=mkdtempSync(join(tmpdir(),'span-running-')),store=new Store(join(dir,'tape.sqlite')),history=new History(store,{cluster:'mainnet'} as any,()=>{}),recorder=new DovesRecorder(store,{cluster:'mainnet'} as any),pub=new Publisher(store,x.chain,history,recorder,join(dir,'public'));
+ x.chain.bandBps=()=>400;
  let sig=0,slot=200,engine:Engine;const sent:any[]=[],errors:any[]=[];x.h.svm.withBlockhashCheck(false);
  const sync=()=>{for(const [kind,key]of [['candle',x.t.candle],['ticket',x.t.ticket],['until',x.until]] as const)x.chain.ingest(kind,key,x.raw(key),slot++);};
  const ingest=(tx:any)=>{history.ingest(`vm-${++sig}`,tx);sync();};

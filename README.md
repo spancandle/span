@@ -22,11 +22,12 @@ Program: `ED2a4EqgPCKRiAV1rF4pK3r44w8xzhU8h9VLYGTXNEMd`.
 
 ## The rule
 
-The payout fits in one function, [`math.rs`](program/programs/span/src/math.rs#L8-L19). `strike_bps` is the ticket's length in basis points; prices carry eight decimals and the result is in USDC base units.
+The payout fits in one function, [`math.rs`](program/programs/span/src/math.rs#L8-L21). `strike_bps` is the ticket's length in basis points; `band_bps` is its payout band, 100, 200 or 400; prices carry eight decimals and the result is in USDC base units.
 
 ```rust
-pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16) -> Result<u64> {
+pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16, band_bps: u16) -> Result<u64> {
     require!(p0 > 0 && high >= low, SpanError::InvalidValue);
+    require!(BANDS.contains(&band_bps), SpanError::InvalidBand);
     let width = u128::from(high.checked_sub(low).ok_or(SpanError::Overflow)?);
     let numerator = width
         .checked_mul(1_000_000_000)
@@ -35,24 +36,25 @@ pub fn payout(p0: u64, high: u64, low: u64, strike_bps: u16) -> Result<u64> {
         .checked_div(u128::from(p0))
         .ok_or(SpanError::Overflow)?;
     let strike = u128::from(strike_bps).checked_mul(100_000).ok_or(SpanError::Overflow)?;
-    Ok(raw.saturating_sub(strike).min(u128::from(VAULT_CAP)) as u64)
+    let net = raw.saturating_sub(strike);
+    Ok(net.checked_mul(u128::from(BAND_DEFAULT / band_bps)).ok_or(SpanError::Overflow)?.min(u128::from(VAULT_CAP)) as u64)
 }
 ```
 
-A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L1247-L1258):
+A wick record is the `mark` instruction, [`lib.rs`](program/programs/span/src/lib.rs#L1270-L1281):
 
 ```rust
 let (high, low) = t.high_low(candle);
 let side = math::extends(price.price, high, low, p0, t.step_bps)?
     .ok_or(SpanError::NotExtension)?;
 require!(
-    math::payout(p0, high, low, t.strike_bps)? < VAULT_CAP,
+    math::payout(p0, high, low, t.strike_bps, band_bps)? < VAULT_CAP,
     SpanError::CapReached
 );
 let burn_per_mark = ctx.accounts.gate.config.burn_per_mark;
 require!(ctx.accounts.span_hold.amount >= burn_per_mark, SpanError::SpanShort);
-let before = math::payout(p0, high, low, t.strike_bps)?;
-let after = math::payout(p0, if side { price.price } else { high }, if side { low } else { price.price }, t.strike_bps)?;
+let before = math::payout(p0, high, low, t.strike_bps, band_bps)?;
+let after = math::payout(p0, if side { price.price } else { high }, if side { low } else { price.price }, t.strike_bps, band_bps)?;
 let burn = if after > before { burn_per_mark } else { 0 };
 ```
 
@@ -96,6 +98,7 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | Candle | Start time, copied timing parameters, thirteen readings, read high and low |
 | Ticket | Seller, optional buyer, premium, length, reader, SPAN load, tail high and low, marks and burned amount |
 | Until | Optional per ticket: the time its seller keeps it for sale inside its hour |
+| Band | Optional per ticket: a payout band of one or two percentage points, set when the ticket is opened; a ticket without one has the four-point band |
 | Resale | Optional per ticket: its buyer's price for the rest of the hour and the time the offer stands |
 | Bid | Optional per ticket and bidder: a price for the rest of the hour, the most the bidder will pay, the time the bid stands, the USDC behind it and any SPAN to load |
 | Request | Optional per candle start, ticket length and requester: a price for the rest of the hour, the most the requester will pay, the time the request stands, the least room left to 40 USDC it accepts, the USDC behind it and any SPAN to load |
@@ -111,8 +114,8 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | set_feed | FeedSet | Change the validated SOL oracle; admin only |
 | set_params | ParamsSet | Change timing for future candles; admin only |
 | open_candle | CandleOpened | Open a 60-minute candle on a minute (SOL), or one or two seconds after it (BTC, ETH); three to five seconds after it, a 30-minute candle |
-| open_ticket | TicketOpened | Deposit 40 minus premium USDC and set the length |
-| open_running | TicketOpened, UntilSet | Open a ticket that stays for sale after its hour starts, until a time the seller sets |
+| open_ticket | TicketOpened, BandSet (one- or two-point band) | Deposit 40 minus premium USDC and set the length and the payout band |
+| open_running | TicketOpened, UntilSet, BandSet (one- or two-point band) | Open a ticket that stays for sale after its hour starts, until a time the seller sets, with a payout band as in open_ticket |
 | withdraw | Withdrawn | Return collateral while the ticket remains unsold; seller only |
 | buy | Bought | Pay the premium into the vault |
 | buy_running | BoughtRunning | After the opening reading, pay what the candle has recorded plus the premium, up to a stated maximum |
@@ -125,6 +128,7 @@ t0 + 3641         settle   anyone; USDC to both sides, unburned SPAN to the buye
 | list_resale | ResaleListed | Offer a bought ticket for the rest of its hour at a price, until a time; buyer only |
 | buy_resale | Resold | After the opening reading, pay the holder what the candle has recorded plus their price, up to a stated maximum, and become the ticket's buyer |
 | close_resale | ResaleClosed | Withdraw an offer (holder), or return the account's rent once the ticket is closed (anyone) |
+| close_band | BandClosed | Return a band account's rent to the seller once its ticket is closed; anyone |
 | place_bid | BidPlaced | Bid for a bought ticket: a price for the rest of its hour, the most you will pay and a time, with that most held in USDC by the bid; anyone but the ticket's buyer |
 | bid_span | BidSpan | Add SPAN, a step and a reader to your bid, to be loaded onto the ticket if the bid is taken; bidder only |
 | accept_bid | BidAccepted | After the opening reading, take a bid on your ticket: receive what the candle has recorded plus the bid's price, return the rest of its USDC to the bidder, make the bidder the ticket's buyer and load its SPAN; buyer only |
@@ -154,9 +158,11 @@ Anyone but a ticket's buyer can bid for it with `place_bid`: a price for the res
 
 Anyone can ask for a ticket without choosing one with `place_request`: a candle start, which names its asset and its length, a ticket length, a price for the rest of the hour, 0.10 to 39 USDC, the most they will pay in all, a time no later than the candle's end, and the least room left to 40 USDC they will accept. The request holds that most in USDC, the candle need not exist yet, and `request_span` can add SPAN with a step and a reader. A request is filled once, with one ticket, in one of three ways. After the opening reading, the buyer of a ticket of that candle and length can fill it with `fill_request_held`, under the rules and price of `accept_bid`. Before the buying cutoff, a seller can fill it with `fill_request_open`: a new ticket at the request's price, the seller putting in 40 USDC less that price and the request paying the price, as `open_ticket` and `buy` would. After the opening reading, a seller can fill it with `fill_request_running`: a new ticket bought as with `buy_running`, with the current DOVES price in A. Each way, the requester pays no more than the request's most, the ticket keeps at least the requested room below 40 USDC, the requester becomes the ticket's buyer, and the request's SPAN is loaded in the same transaction. The rest of the USDC goes back to the requester. A seller's risk on a ticket opened this way is the same as on any ticket: at most 40 USDC less its price.
 
+A request is filled only with a ticket of the four-point band, and a ticket opened to fill one has that band.
+
 ## Settlement
 
-Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0))`. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. A ticket that changed hands through a bid settles the same way. So does a ticket filled for a request. Settlement is available after the candle's end, the read window, the age limit and one second.
+Let P0 be the opening reading, H the greatest scheduled reading or accepted upper tail, and L the least scheduled reading or accepted lower tail. Buyer payout in USDC base units is `min(40_000_000, max(floor(1_000_000_000 * (H - L) / P0) - strike_bps * 100_000, 0) * 400 / band_bps)`. `band_bps` is 100, 200 or 400, so 40 USDC is reached one, two or four percentage points above the length; a ticket without a `Band` account has 400. The seller receives the rest of the vault: 40 USDC, plus A for a ticket bought inside the hour. A resold ticket pays its last buyer, and the seller's share is the same as without the resale. A ticket that changed hands through a bid settles the same way. So does a ticket filled for a request. Settlement is available after the candle's end, the read window, the age limit and one second.
 
 ## Authority
 

@@ -32,6 +32,7 @@ import {
   findCandlePda,
   findVaultPda,
   findSpanHoldPda,
+  findBandPda,
 } from "./pdas.js";
 import { TOKEN, TOKEN_2022 } from "./constants.js";
 import { payout } from "./math.js";
@@ -70,7 +71,7 @@ export async function buildSettleInstructions(input: {
   payer: TransactionSigner;
   config: Config;
   candle: Candle;
-  ticket: Ticket;
+  ticket: Ticket & { bandBps: number };
   ticketAddress: Address;
   vaultBalance: bigint;
   spanBalance: bigint;
@@ -170,6 +171,7 @@ export async function buildSettleInstructions(input: {
       : undefined;
   ixs.push(
     getSettleInstruction({
+      band: (await findBandPda(ticketAddress))[0],
       config: (await findConfigPda())[0],
       candle: (await findCandlePda(ticket.t0))[0],
       ticket: ticketAddress,

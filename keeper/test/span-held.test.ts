@@ -27,7 +27,7 @@ async function setup(spanProgram?: Address, loaded=100000n) {
     return {context:{slot},value:params[0].map(raw)};
   })};
   const chain=new Chain(rpc as any,{} as any,()=>{},h.marker.address);chain.config=h.configState();
-  chain.now=()=>h.svm.getClock().unixTimestamp;
+  chain.bandBps=()=>400;chain.now=()=>h.svm.getClock().unixTimestamp;
   chain.candles.set(ref.candle,{value:h.candleState(ref),slot:1,data:''});
   chain.tickets.set(ref.ticket,{value:h.ticketState(ref),slot:1,data:''});
   chain.feed={publishTs:ref.t0+30n,price:10100000000n,slot:10,source:'poll',recvMs:Date.now()};

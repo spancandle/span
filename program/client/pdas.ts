@@ -20,6 +20,9 @@ export const findSpanHoldPda = (ticket: Address) =>
     programAddress: SPAN_PROGRAM_ADDRESS,
     seeds: ["span", getAddressEncoder().encode(ticket)],
   });
+export const findBandPda = (ticket: Address) => getProgramDerivedAddress({
+  programAddress: SPAN_PROGRAM_ADDRESS, seeds: ["band", getAddressEncoder().encode(ticket)],
+});
 export const findEventAuthorityPda = () =>
   getProgramDerivedAddress({
     programAddress: SPAN_PROGRAM_ADDRESS,

@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import type { RpcPool } from "../common/rpc.js";
 import { feeBounds } from "../common/env.js";
 import { selectPriorityFee } from "../keeper/priority.js";
@@ -69,6 +70,10 @@ export class ChainReader {
   }
   publish() {
     if (this.blockhash && Date.now() - this.hashAt <= 15000)
-      atomicFile(this.dir, "chain.json", this.document());
+      {
+        const doc=this.document();
+        atomicFile(this.dir, "chain.json", doc);
+        atomicFile(resolve(this.dir,"v3"), "chain.json", doc);
+      }
   }
 }

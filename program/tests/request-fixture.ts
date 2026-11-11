@@ -6,12 +6,12 @@ import {Harness,type Wallet,accountData} from './harness.js';
 export const P0=10000000000n;
 export {bidBudget as requestBudget,sendBid as sendRequest,native,token} from './bid-fixture.js';
 export type Actor={signer:Wallet;usdc:Address;span:Address};
-export async function requestFixture(o:{loaded?:boolean;opening?:boolean;secs?:bigint;spanProgram?:Address;mainnetRent?:boolean;setSpan?:boolean;strikeBps?:number}={}){
+export async function requestFixture(o:{loaded?:boolean;opening?:boolean;secs?:bigint;spanProgram?:Address;mainnetRent?:boolean;setSpan?:boolean;strikeBps?:number;bandBps?:number}={}){
  const h=await Harness.create({setSpan:o.setSpan??true,spanProgram:o.spanProgram});
  if(o.mainnetRent)h.svm.setRent(new Rent(5080n,1,50));
  const actors:Actor[]=[{signer:h.buyer,usdc:h.buyerUsdc,span:h.buyerSpan}];
  for(const signer of[h.stranger,h.admin])actors.push({signer,usdc:await h.fundToken(signer,USDC,TOKEN,1000000000n),span:await h.fundToken(signer,h.spanMint,h.spanProgram,1000000n)});
- const t=await h.open({t0:o.secs===1800n?1203n:1200n,sold:true,loaded:o.loaded??false,premium:1000000n,strikeBps:o.strikeBps??0}),resale=(await s.findResalePda(t.ticket))[0];
+ const t=await h.open({t0:o.secs===1800n?1203n:1200n,sold:true,loaded:o.loaded??false,premium:1000000n,strikeBps:o.strikeBps??0,bandBps:o.bandBps??400}),resale=(await s.findResalePda(t.ticket))[0];
  const holder=()=>actors.find(a=>a.signer.address===unwrapOption(h.ticketState(t).buyer))!;
  const ref=async(requester=actors[1])=>{const request=(await s.findRequestPda(t.t0,(o.strikeBps??0),requester.signer.address))[0];return{request,requestUsdc:(await s.findRequestUsdcPda(request))[0],requestSpan:(await s.findRequestSpanPda(request))[0],requester};};
  const place=async(requester=actors[1],extra:any={})=>{const b=await ref(requester);return h.ix('placeRequest',{...t,...b,strikeBps:(o.strikeBps??0),minRoom:0n,requester:requester.signer,requesterSource:requester.usdc,ask:100000n,cap:40000000n,until:t.t0+s.secsOf(t.t0),...extra});};

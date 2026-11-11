@@ -37,7 +37,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
-import { findConfigPda, findVaultPda } from "../pdas/index.js";
+import { findBandPda, findConfigPda, findVaultPda } from "../pdas/index.js";
 import { SPAN_PROGRAM_ADDRESS } from "../programs/index.js";
 
 export const SETTLE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -67,6 +67,7 @@ export type SettleInstruction<
   TAccountSpanTokenProgram extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountBand extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -120,6 +121,9 @@ export type SettleInstruction<
       TAccountProgram extends string
         ? ReadonlyAccount<TAccountProgram>
         : TAccountProgram,
+      TAccountBand extends string
+        ? ReadonlyAccount<TAccountBand>
+        : TAccountBand,
       ...TRemainingAccounts,
     ]
   >;
@@ -171,6 +175,7 @@ export type SettleAsyncInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   config?: TAccountConfig;
   candle: TAccountCandle;
@@ -188,6 +193,7 @@ export type SettleAsyncInput<
   spanTokenProgram?: TAccountSpanTokenProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band?: TAccountBand;
 };
 
 export async function getSettleInstructionAsync<
@@ -207,6 +213,7 @@ export async function getSettleInstructionAsync<
   TAccountSpanTokenProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: SettleAsyncInput<
@@ -225,7 +232,8 @@ export async function getSettleInstructionAsync<
     TAccountBuyerSpan,
     TAccountSpanTokenProgram,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -294,6 +302,10 @@ export async function getSettleInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >
 > {
@@ -361,6 +373,7 @@ export async function getSettleInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -386,6 +399,17 @@ export async function getSettleInstructionAsync<
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
+  if (!accounts.band.value) {
+    accounts.band.value = await findBandPda(
+      {
+        ticket: getAddressFromResolvedInstructionAccount(
+          "ticket",
+          accounts.ticket.value,
+        ),
+      },
+      { programAddress },
+    );
+  }
 
   return Object.freeze({
     accounts: [
@@ -405,6 +429,7 @@ export async function getSettleInstructionAsync<
       getAccountMeta("spanTokenProgram", accounts.spanTokenProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getSettleInstructionDataEncoder().encode({}),
     programAddress,
@@ -473,6 +498,10 @@ export async function getSettleInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -497,6 +526,7 @@ export type SettleInput<
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput = InstructionAccountInput,
 > = {
   config: TAccountConfig;
   candle: TAccountCandle;
@@ -514,6 +544,7 @@ export type SettleInput<
   spanTokenProgram?: TAccountSpanTokenProgram;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
+  band: TAccountBand;
 };
 
 export function getSettleInstruction<
@@ -533,6 +564,7 @@ export function getSettleInstruction<
   TAccountSpanTokenProgram extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
+  TAccountBand extends InstructionAccountInput,
   TProgramAddress extends Address = typeof SPAN_PROGRAM_ADDRESS,
 >(
   input: SettleInput<
@@ -551,7 +583,8 @@ export function getSettleInstruction<
     TAccountBuyerSpan,
     TAccountSpanTokenProgram,
     TAccountEventAuthority,
-    TAccountProgram
+    TAccountProgram,
+    TAccountBand
   >,
   config?: { programAddress?: TProgramAddress },
 ): SettleInstruction<
@@ -619,6 +652,10 @@ export function getSettleInstruction<
   ResolvedInstructionAccountMeta<
     TAccountProgram,
     InstructionAccountInputAddress<TAccountProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBand,
+    InstructionAccountInputAddress<TAccountBand>
   >
 > {
   // Program address.
@@ -685,6 +722,7 @@ export function getSettleInstruction<
       isSigner: false,
       isWritable: false,
     },
+    band: { value: input.band ?? null, isSigner: false, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -715,6 +753,7 @@ export function getSettleInstruction<
       getAccountMeta("spanTokenProgram", accounts.spanTokenProgram),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
+      getAccountMeta("band", accounts.band),
     ],
     data: getSettleInstructionDataEncoder().encode({}),
     programAddress,
@@ -783,6 +822,10 @@ export function getSettleInstruction<
     ResolvedInstructionAccountMeta<
       TAccountProgram,
       InstructionAccountInputAddress<TAccountProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBand,
+      InstructionAccountInputAddress<TAccountBand>
     >
   >);
 }
@@ -809,6 +852,7 @@ export type ParsedSettleInstruction<
     spanTokenProgram?: TAccountMetas[13] | undefined;
     eventAuthority: TAccountMetas[14];
     program: TAccountMetas[15];
+    band: TAccountMetas[16];
   };
   data: SettleInstructionData;
 };
@@ -821,12 +865,12 @@ export function parseSettleInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSettleInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 16) {
+  if (instruction.accounts.length < 17) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 16,
+        expectedAccountMetas: 17,
       },
     );
   }
@@ -861,6 +905,7 @@ export function parseSettleInstruction<
       spanTokenProgram: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
+      band: getNextAccount(),
     },
     data: getSettleInstructionDataDecoder().decode(instruction.data),
   };

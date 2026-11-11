@@ -5,6 +5,7 @@ export {
   findTicketPda,
   findVaultPda,
   findSpanHoldPda,
+  findBandPda,
   findEventAuthorityPda,
   findUntilPda,
   findResalePda,

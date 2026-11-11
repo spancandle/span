@@ -69,7 +69,7 @@ async function setup() {
       if (method === "getAccountInfo") return { context, value: raw(args[0]) };
       if (method === "getMultipleAccounts") return { context, value: args[0].map(raw) };
       if (method === "getProgramAccounts") return { context, value: h.svm.getProgramAccounts(s.SPAN_PROGRAM_ADDRESS)
-        .filter(a => getBase58Decoder().decode(a.data.subarray(0, 8)) === args[1].filters[0].memcmp.bytes)
+        .filter(a => (!args[1].filters?.length || getBase58Decoder().decode(a.data.subarray(0, 8)) === args[1].filters[0].memcmp.bytes))
         .map(a => ({ pubkey: a.address, account: raw(a.address) })) };
       if (method === "getLatestBlockhash") return { value: { blockhash: h.svm.latestBlockhash(), lastValidBlockHeight: 10000000000 } };
       if (method === "getBlockHeight") return 1;

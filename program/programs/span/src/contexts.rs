@@ -96,6 +96,9 @@ pub struct OpenTicket<'info> {
     pub seller_source: Box<Account<'info, UsdcAccount>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+    /// CHECK: canonical optional payout-band account, initialized only for a narrow band.
+    #[account(mut, seeds = [b"band", ticket.key().as_ref()], bump)]
+    pub band: UncheckedAccount<'info>,
 }
 
 pub fn new_ticket_space(gate: &TicketGate, id: u64) -> Result<usize> {
@@ -340,6 +343,9 @@ pub struct OpenRunning<'info> {
     pub system_program: Program<'info, System>,
     #[account(init, payer = seller, space = 8 + Until::INIT_SPACE, seeds = [b"until", ticket.key().as_ref()], bump)]
     pub until: Box<Account<'info, Until>>,
+    /// CHECK: canonical optional payout-band account, initialized only for a narrow band.
+    #[account(mut, seeds = [b"band", ticket.key().as_ref()], bump)]
+    pub band: UncheckedAccount<'info>,
 }
 
 #[event_cpi]
@@ -823,4 +829,19 @@ pub struct CloseRequest<'info> {
 pub fn request_ticket_space(config: &Config, id: u64) -> Result<usize> {
     require_eq!(id, config.next_ticket_id, SpanError::IdMismatch);
     Ok(8 + Ticket::INIT_SPACE)
+}
+
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct CloseBand<'info> {
+    #[account(mut, close = seller, seeds = [b"band", band.ticket.as_ref()], bump = band.bump)]
+    pub band: Box<Account<'info, Band>>,
+    /// CHECK: bound to the original seller's rent destination.
+    #[account(mut, address = band.seller @ SpanError::ReceiverMismatch)]
+    pub seller: UncheckedAccount<'info>,
+    /// CHECK: the bound ticket must have no data before its Band can close.
+    #[account(address = band.ticket @ SpanError::InvalidBand)]
+    pub ticket: UncheckedAccount<'info>,
+    pub closer: Signer<'info>,
 }

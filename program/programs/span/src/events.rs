@@ -1,6 +1,12 @@
 use anchor_lang::prelude::*;
 
 #[event]
+pub struct BandSet { pub ticket: Pubkey, pub id: u64, pub width_bps: u16 }
+
+#[event]
+pub struct BandClosed { pub ticket: Pubkey, pub band: Pubkey, pub closer: Pubkey }
+
+#[event]
 pub struct Initialized {
     pub admin: Pubkey,
     pub usdc_mint: Pubkey,

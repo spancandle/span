@@ -116,9 +116,19 @@ export const SPAN_ERROR__REQUEST_MISMATCH = 0x17a0; // 6048
 export const SPAN_ERROR__ROOM_SHORT = 0x17a1; // 6049
 /** NotRequester:  */
 export const SPAN_ERROR__NOT_REQUESTER = 0x17a2; // 6050
+/** InvalidBand:  */
+export const SPAN_ERROR__INVALID_BAND = 0x17a3; // 6051
+/** BandMissing:  */
+export const SPAN_ERROR__BAND_MISSING = 0x17a4; // 6052
+/** BandMismatch:  */
+export const SPAN_ERROR__BAND_MISMATCH = 0x17a5; // 6053
+/** TicketLive:  */
+export const SPAN_ERROR__TICKET_LIVE = 0x17a6; // 6054
 
 export type SpanError =
   | typeof SPAN_ERROR__ALREADY_LOADED
+  | typeof SPAN_ERROR__BAND_MISMATCH
+  | typeof SPAN_ERROR__BAND_MISSING
   | typeof SPAN_ERROR__BEFORE_BOUNDARY
   | typeof SPAN_ERROR__BUY_CLOSED
   | typeof SPAN_ERROR__CAP_REACHED
@@ -130,6 +140,7 @@ export type SpanError =
   | typeof SPAN_ERROR__FEED_STALE
   | typeof SPAN_ERROR__FREEZE_AUTHORITY_MINT
   | typeof SPAN_ERROR__ID_MISMATCH
+  | typeof SPAN_ERROR__INVALID_BAND
   | typeof SPAN_ERROR__INVALID_VALUE
   | typeof SPAN_ERROR__MARK_CLOSED
   | typeof SPAN_ERROR__MISSING_ACCOUNT
@@ -163,6 +174,7 @@ export type SpanError =
   | typeof SPAN_ERROR__SPAN_NOT_SET
   | typeof SPAN_ERROR__SPAN_SHORT
   | typeof SPAN_ERROR__STEP_NOT_ALLOWED
+  | typeof SPAN_ERROR__TICKET_LIVE
   | typeof SPAN_ERROR__TRANSFER_FEE_MINT
   | typeof SPAN_ERROR__TRANSFER_HOOK_ACTIVE
   | typeof SPAN_ERROR__UNSUPPORTED_TOKEN_PROGRAM
@@ -174,6 +186,8 @@ let spanErrorMessages: Record<SpanError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
   spanErrorMessages = {
     [SPAN_ERROR__ALREADY_LOADED]: ``,
+    [SPAN_ERROR__BAND_MISMATCH]: ``,
+    [SPAN_ERROR__BAND_MISSING]: ``,
     [SPAN_ERROR__BEFORE_BOUNDARY]: ``,
     [SPAN_ERROR__BUY_CLOSED]: ``,
     [SPAN_ERROR__CAP_REACHED]: ``,
@@ -185,6 +199,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [SPAN_ERROR__FEED_STALE]: ``,
     [SPAN_ERROR__FREEZE_AUTHORITY_MINT]: ``,
     [SPAN_ERROR__ID_MISMATCH]: ``,
+    [SPAN_ERROR__INVALID_BAND]: ``,
     [SPAN_ERROR__INVALID_VALUE]: ``,
     [SPAN_ERROR__MARK_CLOSED]: ``,
     [SPAN_ERROR__MISSING_ACCOUNT]: ``,
@@ -218,6 +233,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [SPAN_ERROR__SPAN_NOT_SET]: ``,
     [SPAN_ERROR__SPAN_SHORT]: ``,
     [SPAN_ERROR__STEP_NOT_ALLOWED]: ``,
+    [SPAN_ERROR__TICKET_LIVE]: ``,
     [SPAN_ERROR__TRANSFER_FEE_MINT]: ``,
     [SPAN_ERROR__TRANSFER_HOOK_ACTIVE]: ``,
     [SPAN_ERROR__UNSUPPORTED_TOKEN_PROGRAM]: ``,

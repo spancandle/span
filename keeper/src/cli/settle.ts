@@ -25,12 +25,19 @@ export async function settleOne(key: string) {
         .decode(
           bytes(await account(rpc, (await s.findCandlePda(ticket.t0))[0])),
         );
+    const rawBand = await account(rpc, (await s.findBandPda(ticketAddress))[0]);
+    let bandBps: number = s.BAND_DEFAULT;
+    if (rawBand && bytes(rawBand).length) {
+      const band = s.getBandDecoder().decode(bytes(rawBand));
+      if (rawBand.owner !== s.SPAN_PROGRAM_ADDRESS || band.ticket !== ticketAddress || !s.BANDS.includes(band.widthBps as 100|200|400)) throw Error("Invalid Band account");
+      bandBps = band.widthBps;
+    }
     const { ixs, rent } = await settlement(
         rpc,
         payer,
         config,
         candle,
-        ticket,
+        {...ticket,bandBps},
         ticketAddress,
       ),
       latest = (

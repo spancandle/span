@@ -53,4 +53,8 @@ pub enum SpanError {
     RequestMismatch,
     RoomShort,
     NotRequester,
+    InvalidBand,
+    BandMissing,
+    BandMismatch,
+    TicketLive,
 }

@@ -11,6 +11,16 @@ import { spanHeld, type Chain, type SpanHoldRead } from "../keeper/chain.js";
 import type { RpcPool } from "../common/rpc.js";
 import type { History } from "./history.js";
 import {resaleEventsOf,transfersOf} from './transfers.js';
+/** Opening events retain the width after the optional account has been closed. */
+export function historicalBand(history: History, ticket: string): number {
+  return history.events("BandSet").find(x=>x.ticket===ticket)?.widthBps ?? 400;
+}
+export function liveBand(chain: Chain, history: History, ticket: string): number | undefined {
+  const event=history.events("BandSet").find(x=>x.ticket===ticket);
+  if (event) return event.widthBps;
+  return chain.bandBps ? chain.bandBps(ticket as any) :
+    (chain.tickets.get(ticket as any)?.value as (Ticket & {bandBps?:number}) | undefined)?.bandBps;
+}
 export const legacyStart=(t0:bigint|string|number)=>((BigInt(t0)%60n+60n)%60n)<3n;
 // Mint decimals never change, so one successful read is kept for the process.
 export class SpanDecimals {
@@ -93,11 +103,12 @@ export function liveDocuments(
   chain: Chain,
   history: History,
   decimals: (mint: string) => number | null = () => null,
-  version: 1|2 = 1,
+  version: 1|2|3 = 1,
 ) {
   const now = chain.now(),
     events = history.events("Read"),
-    tickets = [...chain.tickets].filter(([,x])=>version===2||legacyStart(x.value.t0)).sort((a, b) =>
+    tickets = [...chain.tickets].filter(([key,x])=> (version>=2||legacyStart(x.value.t0)) &&
+      liveBand(chain,history,key) !== undefined && (version===3||liveBand(chain,history,key)===400)).sort((a, b) =>
       a[1].value.id < b[1].value.id ? -1 : 1,
     ),
     config = chain.config!,
@@ -128,7 +139,7 @@ export function liveDocuments(
         nextTicketId: String(config.nextTicketId),
       },
       candles: [...chain.candles]
-        .filter(([,x])=>version===2||legacyStart(x.value.t0))
+        .filter(([,x])=>version>=2||legacyStart(x.value.t0))
         .filter(
           ([, x]) =>
             x.value.t0 >= now - 604800n ||
@@ -148,12 +159,12 @@ export function liveDocuments(
                     ? -1
                     : 1,
               ),
-            offers = open.filter(([, t], i) => open.findIndex(([, x]) => x.value.strikeBps === t.value.strikeBps) === i).sort((a,b) => a[1].value.strikeBps-b[1].value.strikeBps);
+            offers = open.filter(([key, t], i) => open.findIndex(([other, x]) => x.value.strikeBps === t.value.strikeBps && liveBand(chain,history,key)===liveBand(chain,history,other)) === i).sort((a,b) => a[1].value.strikeBps-b[1].value.strikeBps || liveBand(chain,history,a[0])!-liveBand(chain,history,b[0])!);
           return {
             address,
             asset: nameOf(assetOf(c.t0)),
             t0: String(c.t0),
-            ...(version===2?{secs:Number(secsOf(c.t0))}:{}),
+            ...(version>=2?{secs:Number(secsOf(c.t0))}:{}),
             readWindow: c.readWindow,
             ageLimit: c.ageLimit,
             buyCutoff: c.buyCutoff,
@@ -164,7 +175,7 @@ export function liveDocuments(
             tickets: {
               open: open.length,
               sold: ts.length - open.length,
-              offers: offers.map(([address,{value:t}]) => ({ strikeBps: t.strikeBps, address, id: String(t.id), premium: String(t.premium) })),
+              offers: offers.map(([address,{value:t}]) => ({ strikeBps: t.strikeBps, ...(version===3?{bandBps:liveBand(chain,history,address)}:{}), address, id: String(t.id), premium: String(t.premium) })),
             },
           };
         }),
@@ -172,12 +183,13 @@ export function liveDocuments(
     tickets: {
       v: version,
       generated: Date.now(),
-      ...(version===2?{requests:[...(chain.requests??[])].sort(([a,x],[b,y])=>{
+      ...(version>=2?{requests:[...(chain.requests??[])].sort(([a,x],[b,y])=>{
         for(const key of ['t0','strikeBps','ask'] as const)if(x.value[key]!==y.value[key])return x.value[key]>y.value[key]?-1:1;
         return a<b?-1:a>b?1:0;
       }).map(([request,{value:r}])=>({request,requester:r.requester,t0:String(r.t0),secs:Number(secsOf(r.t0)),asset:nameOf(assetOf(r.t0)),strikeBps:r.strikeBps,ask:String(r.ask),cap:String(r.cap),until:String(r.until),minRoom:String(r.minRoom),span:r.spanAmount>0n?{amount:String(r.spanAmount),stepBps:r.stepBps,marker:r.marker}:null}))}:{}),
       tickets: tickets.map(([address, { value: t }]) => ({
         address,
+        ...(version===3?{bandBps:liveBand(chain,history,address)}:{}),
         until: (()=>{const u=[...(chain.untils?.values() ?? [])].find(x=>x.value.ticket===address);return u?String(u.value.until):null;})(),
         entry: entryOf(history,address),
         resale: (()=>{const offer=[...(chain.resales?.values()??[])].find(x=>x.value.ticket===address)?.value;return offer?{holder:offer.holder,ask:String(offer.ask),until:String(offer.until)}:null;})(),

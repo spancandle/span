@@ -9,11 +9,14 @@ export type CandlePrices = {
 };
 export type TicketPrices = {
   strikeBps: number;
+  bandBps: number;
   tailHigh: bigint;
   tailLow: bigint;
   stepBps: number;
 };
 export const CAP = 40_000_000n;
+export const BANDS = [100, 200, 400] as const;
+export const BAND_DEFAULT = 400;
 export function boundary(t0: bigint, j: number) {
   if (!Number.isInteger(j) || j < 0 || j > lastReadOf(t0))
     throw new RangeError("InvalidValue");
@@ -29,13 +32,15 @@ export function highLow(c: CandlePrices, t: TicketPrices) {
   };
 }
 export function payout(c: CandlePrices, t: TicketPrices) {
+  if (!(BANDS as readonly number[]).includes(t.bandBps)) throw new RangeError("InvalidBand");
   const p0 = c.reads[0].price;
   if (!p0) return 0n;
   const { high, low } = highLow(c, t);
   if (high < low) throw new RangeError("InvalidValue");
   const raw = (1_000_000_000n * (high - low)) / p0;
   const net = raw - BigInt(t.strikeBps) * 100_000n;
-  return net > CAP ? CAP : net > 0n ? net : 0n;
+  const amount = (net > 0n ? net : 0n) * BigInt(BAND_DEFAULT / t.bandBps);
+  return amount > CAP ? CAP : amount;
 }
 export function markAccepts(
   c: CandlePrices,

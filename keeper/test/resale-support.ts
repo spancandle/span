@@ -28,11 +28,12 @@ export async function resaleRuntime(o:{spanProgram?:Address}={}){
   const context={slot:Number(h.svm.getClock().slot)};
   if(method==='getAccountInfo')return{context,value:raw(params[0])};
   if(method==='getMultipleAccounts')return{context,value:params[0].map(raw)};
-  if(method==='getProgramAccounts')return{context,value:h.svm.getProgramAccounts(s.SPAN_PROGRAM_ADDRESS).filter(a=>getBase58Decoder().decode(a.data.subarray(0,8))===params[1].filters[0].memcmp.bytes).map(a=>({pubkey:a.address,account:raw(a.address)}))};
+  if(method==='getProgramAccounts')return{context,value:h.svm.getProgramAccounts(s.SPAN_PROGRAM_ADDRESS).filter(a=>(!params[1].filters?.length||getBase58Decoder().decode(a.data.subarray(0,8))===params[1].filters[0].memcmp.bytes)).map(a=>({pubkey:a.address,account:raw(a.address)}))};
   if(method==='getMinimumBalanceForRentExemption')return Number(h.svm.minimumBalanceForRentExemption(BigInt(params[0])));
   throw Error(method);
  })},ws={subscribe:(kind:string,args:any[],cb:any)=>{subscriptions.push({kind,args,cb});return()=>{};},on:()=>{},start:()=>{},close:()=>{}};
  const chain=new Chain(rpc as any,ws as any,()=>{},h.marker.address);chain.config=h.configState();chain.configKey=h.config;chain.now=()=>h.svm.getClock().unixTimestamp;
+ chain.bandBps=()=>400;
  const sync=()=>{const slot=Number(h.svm.getClock().slot);for(const[kind,key]of[['candle',t.candle],['ticket',t.ticket],['resale',resale]]as const)chain.ingest(kind,key,raw(key),slot);chain.config=h.configState();};
  const execute=async(ixs:any[],payer:Wallet=h.marker)=>{const tx=await h.transaction(ixs,payer);return capture(h,Buffer.from(getTransactionEncoder().encode(tx)).toString('base64'));};
  const list=(actor=actors[0],ask=100000n)=>h.ix('listResale',{...t,resale,holder:actor.signer,ask,until:t.t0+3600n});
